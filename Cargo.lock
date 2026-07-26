@@ -1221,7 +1221,7 @@ dependencies = [
 
 [[package]]
 name = "kosong-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.23.0",
  "camino",
@@ -1236,7 +1236,7 @@ dependencies = [
 
 [[package]]
 name = "kosong-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.23.0",
  "camino",

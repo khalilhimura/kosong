@@ -12,6 +12,31 @@ and environment variables — will not change without being named here.
 
 Nothing yet.
 
+## [0.1.1] — 2026-07-27
+
+The service this release talks to is deployed and reachable. 0.1.0 shipped
+pointing at hostnames that did not exist, so its account features could not
+work without setting `KOSONG_API_URL` by hand.
+
+### Changed
+
+- `kosong` now reaches the service by default. The built-in address is
+  `https://api.kosong.thefutureissolo.com`, which exists; 0.1.0 named
+  `api.kosong.dev`, which does not.
+- The installer moved to `https://kosong.thefutureissolo.com/install.sh`,
+  including in the advice printed by the binary itself. A repair action naming
+  a dead URL is worse than none.
+
+### Added
+
+- A project website at <https://kosong.thefutureissolo.com>, which serves the
+  installer and renders the guides from the same Markdown the repository holds.
+
+### Fixed
+
+- Verification emails send. 0.1.0's service sent from a domain nobody owned,
+  and with no email provider configured it wrote codes into its own logs.
+
 ## [0.1.0] — 2026-07-26
 
 First release. The local half of kosong is complete and works with no
@@ -63,4 +88,5 @@ archive until it does.
 - [`guide/course-outline.md`](guide/course-outline.md) — the five course
   modules mapped to real commands and the artefacts they produce.
 
+[0.1.1]: https://github.com/khalilhimura/kosong/releases/tag/v0.1.1
 [0.1.0]: https://github.com/khalilhimura/kosong/releases/tag/v0.1.0
