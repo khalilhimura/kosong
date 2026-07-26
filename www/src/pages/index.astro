@@ -1,0 +1,163 @@
+---
+import Base from "../layouts/Base.astro";
+import guides from "../guides.json";
+
+const REPO = "https://github.com/khalilhimura/kosong";
+
+const commands = [
+  ["kosong start", "Set things up, one step at a time", "—"],
+  ["kosong new", "Create a page", "A file is a durable object you can move"],
+  ["kosong edit", "Open your editor", "The terminal opens editors; it is not one"],
+  ["kosong preview", "Serve it locally", "A local server is a temporary website"],
+  ["kosong status", "Report current state", "Software can describe itself"],
+  ["kosong doctor", "Check your setup", "Prerequisites can be checked, not guessed"],
+  ["kosong login", "Sign in by email code", "—"],
+  ["kosong sync", "Keep a private remote copy", "—"],
+  ["kosong delete-account", "Delete your account and its stored page", "Deleting an account is not deleting your files"],
+  ["kosong site init", "Make a publishable folder", "Git tracks a folder's history"],
+  ["kosong site publish", "Build and deploy", "Deployment moves files. It is not magic"],
+  ["kosong site rollback", "See past versions", "Published systems change with intent"],
+];
+
+const owned = [
+  ["Your page", "kosong.md", "Any Markdown editor"],
+  ["Your site", "<name>/", "An ordinary Astro project"],
+  ["Its history", "<name>/.git", "Ordinary git"],
+  ["The built files", "<name>/dist", "Plain HTML"],
+];
+
+const kickers = {
+  troubleshooting: "When it breaks",
+  providers: "The boundary",
+  "course-outline": "The course",
+};
+---
+
+<Base
+  title="kosong — write one page, publish it, learn what happened"
+  description="A beginner-first command line for making, understanding, and publishing one Markdown file. Everything local works with no account and no network."
+  wide
+>
+  <div class="hero stagger">
+    <h1>kosong<span class="caret">_</span></h1>
+    <p class="lede">
+      Open a terminal. Write one page. Publish it. Learn what happened.
+    </p>
+    <p class="sub">
+      Not a website builder that hides the work. Every step leaves you with
+      something ordinary you own: a Markdown file, a Git repository, and a
+      static website. Delete kosong tomorrow and all three still work.
+    </p>
+    <span class="promise">Everything local works with no account and no network</span>
+  </div>
+
+  <section id="install">
+    <h2>Install</h2>
+    <div class="console">
+      <span class="line" data-prompt>curl -fsSL https://kosong.thefutureissolo.com/install.sh | sh</span>
+    </div>
+    <p>
+      Piping a script into your shell deserves suspicion. This one downloads a
+      fixed release and refuses to install anything whose checksum does not
+      match — <a href="/install.sh">read it first</a>, or{" "}
+      <a href={`${REPO}/releases`}>install manually from a release</a> and verify
+      it yourself:
+    </p>
+    <div class="console">
+      <span class="line" data-prompt>shasum -a 256 -c SHA256SUMS --ignore-missing</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Your first page</h2>
+    <div class="console">
+      <span class="line" data-prompt>kosong start      <span class="note"># make a page</span></span>
+      <span class="line" data-prompt>kosong edit       <span class="note"># open it in your editor</span></span>
+      <span class="line" data-prompt>kosong preview    <span class="note"># look at it, on your own computer</span></span>
+      <span class="line" data-prompt>kosong status     <span class="note"># see where things stand</span></span>
+    </div>
+    <p>Nothing above touches the network or asks who you are.</p>
+  </section>
+
+  <section id="commands">
+    <h2>Every command teaches one thing</h2>
+    <table class="slab">
+      <thead>
+        <tr><th>Command</th><th>What it does</th><th>What it teaches</th></tr>
+      </thead>
+      <tbody>
+        {commands.map(([name, does, teaches]) => (
+          <tr>
+            <td><code>{name}</code></td>
+            <td>{does}</td>
+            <td>{teaches}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>What you end up owning</h2>
+    <table class="slab">
+      <thead>
+        <tr><th>Thing</th><th>Where</th><th>Works without kosong</th></tr>
+      </thead>
+      <tbody>
+        {owned.map(([thing, where, without]) => (
+          <tr>
+            <td>{thing}</td>
+            <td><code>{where}</code></td>
+            <td>{without}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Two things kosong will not do</h2>
+    <h3>It never runs a shell.</h3>
+    <p>
+      Every external tool is invoked as an executable plus separate arguments,
+      so a <code>;</code> in a name is a character, not a command. There is no
+      <code>sh -c</code> anywhere in the codebase.
+    </p>
+    <h3 style="margin-top:2rem">It cannot roll back a Cloudflare Pages deployment.</h3>
+    <p>
+      Wrangler has no command for it, and doing it through Cloudflare's API
+      would mean holding your Cloudflare credentials — which kosong is built
+      never to do. <code>kosong site rollback</code> shows your deployment
+      history and tells you exactly where to click instead.
+    </p>
+  </section>
+
+  <section>
+    <h2>Read further</h2>
+    <div class="cards">
+      {guides.map((g) => (
+        <a class="card" href={`/guide/${g.slug}`}>
+          <span class="kicker">{kickers[g.slug] ?? "Guide"}</span>
+          <h3>{g.title}</h3>
+          <p>{g.summary.slice(0, 140)}{g.summary.length > 140 ? "…" : ""}</p>
+        </a>
+      ))}
+    </div>
+  </section>
+
+  <section style="border-bottom:none">
+    <h2>Security, stated plainly</h2>
+    <p>
+      kosong uses HTTPS, encryption at rest, private storage, verified-email
+      sign-in, hashed single-use codes, short-lived access tokens, and rotating
+      refresh tokens.
+    </p>
+    <p>
+      <strong>It is not end-to-end encrypted.</strong> The service operator could
+      read a synced document. If that matters to you, do not sync — everything
+      local works without it. See
+      <a href={`${REPO}/blob/main/SECURITY.md`}>SECURITY.md</a> for the full
+      boundary.
+    </p>
+  </section>
+</Base>

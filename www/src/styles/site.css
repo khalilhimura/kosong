@@ -1,0 +1,582 @@
+/*
+ * kosong, typeset.
+ *
+ * The product's claim is that nothing is hidden and nothing is magic, so the
+ * site is a document rather than a landing page: a measure you can read, rules
+ * that separate rather than decorate, and one accent colour borrowed from an
+ * amber phosphor terminal. Mono carries the chrome and every command; a serif
+ * carries the prose, because several hundred lines of monospaced argument is a
+ * punishment.
+ *
+ * The fonts are served from this domain. A site for a tool that promises not to
+ * watch you should not ask another company to watch you on its behalf.
+ */
+
+@font-face {
+  font-family: "Plex Mono";
+  src: url("/fonts/ibm-plex-mono-latin-400-normal.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Plex Mono";
+  src: url("/fonts/ibm-plex-mono-latin-600-normal.woff2") format("woff2");
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Newsreader";
+  src: url("/fonts/newsreader-latin-wght-normal.woff2") format("woff2");
+  font-weight: 200 800;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Newsreader";
+  src: url("/fonts/newsreader-latin-wght-italic.woff2") format("woff2");
+  font-weight: 200 800;
+  font-style: italic;
+  font-display: swap;
+}
+
+:root {
+  --mono: "Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --serif: "Newsreader", Georgia, "Times New Roman", serif;
+
+  /* Paper and ink, warmed. */
+  --paper: #f6f2ea;
+  --paper-sunk: #efe9de;
+  --ink: #191713;
+  --ink-soft: #55504a;
+  --ink-faint: #8b857c;
+  --rule: #d9d1c3;
+  --rule-hair: #e6dfd2;
+
+  /* Amber phosphor, dimmed to something a page can carry. */
+  --accent: #a3441a;
+  --accent-soft: #c9793f;
+  --accent-wash: #f2e4d5;
+
+  --measure: 34rem;
+  --gutter: clamp(1.25rem, 5vw, 4rem);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #12110f;
+    --paper-sunk: #1a1815;
+    --ink: #ece6da;
+    --ink-soft: #a8a196;
+    --ink-faint: #736d64;
+    --rule: #2e2a24;
+    --rule-hair: #24211c;
+
+    --accent: #e8873f;
+    --accent-soft: #c2703a;
+    --accent-wash: #241a12;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: clamp(1.02rem, 0.98rem + 0.2vw, 1.15rem);
+  line-height: 1.68;
+  font-synthesis-weight: none;
+  text-rendering: optimizeLegibility;
+}
+
+/* A faint horizontal ruling, like paper for a typewriter. Purely atmosphere,
+   so it goes when someone asks for less motion or less contrast. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    var(--rule-hair) 0 1px,
+    transparent 1px 2.25rem
+  );
+  opacity: 0.5;
+  mask-image: linear-gradient(to bottom, black, transparent 55%);
+}
+
+@media (prefers-contrast: more) {
+  body::before {
+    display: none;
+  }
+}
+
+.shell {
+  position: relative;
+  z-index: 1;
+  max-width: 62rem;
+  margin: 0 auto;
+  padding: 0 var(--gutter) 6rem;
+}
+
+/* ---------------------------------------------------------------- masthead */
+
+.masthead {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 2rem;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 2rem 0 1.25rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.wordmark {
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 1.05rem;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.wordmark::before {
+  content: "$ ";
+  color: var(--accent);
+}
+
+.masthead nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  letter-spacing: 0.01em;
+}
+
+.masthead nav a {
+  color: var(--ink-soft);
+  text-decoration: none;
+  padding-bottom: 2px;
+  border-bottom: 1px solid transparent;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.masthead nav a:hover,
+.masthead nav a:focus-visible {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* -------------------------------------------------------------------- hero */
+
+.hero {
+  padding: clamp(3rem, 9vw, 6.5rem) 0 clamp(2.5rem, 6vw, 4rem);
+  border-bottom: 1px solid var(--rule);
+}
+
+.hero h1 {
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: clamp(2.6rem, 1.6rem + 4.6vw, 5.2rem);
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+  margin: 0 0 1.5rem;
+}
+
+.hero h1 .caret {
+  color: var(--accent);
+  animation: blink 1.3s steps(1, end) infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.lede {
+  max-width: var(--measure);
+  margin: 0 0 1.25rem;
+  font-size: clamp(1.25rem, 1.1rem + 0.7vw, 1.7rem);
+  line-height: 1.42;
+  text-wrap: balance;
+}
+
+.sub {
+  max-width: var(--measure);
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+.promise {
+  display: inline-block;
+  margin-top: 2rem;
+  padding: 0.3rem 0.7rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-wash);
+  border: 1px solid var(--accent-soft);
+}
+
+/* One orchestrated entrance, then nothing moves again. */
+.stagger > * {
+  animation: rise 0.6s cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
+}
+.stagger > *:nth-child(1) { animation-delay: 0.04s; }
+.stagger > *:nth-child(2) { animation-delay: 0.12s; }
+.stagger > *:nth-child(3) { animation-delay: 0.2s; }
+.stagger > *:nth-child(4) { animation-delay: 0.28s; }
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(0.6rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stagger > *,
+  .hero h1 .caret {
+    animation: none;
+  }
+}
+
+/* ---------------------------------------------------------------- sections */
+
+section {
+  padding: clamp(2.5rem, 6vw, 4rem) 0;
+  border-bottom: 1px solid var(--rule-hair);
+}
+
+h2 {
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 0.82rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 0 0 1.75rem;
+}
+
+h3 {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 1.35rem;
+  line-height: 1.3;
+  margin: 0 0 0.5rem;
+}
+
+p {
+  max-width: var(--measure);
+}
+
+a {
+  color: var(--accent);
+  text-underline-offset: 0.2em;
+  text-decoration-thickness: 1px;
+}
+
+a:hover {
+  text-decoration-thickness: 2px;
+}
+
+/* ----------------------------------------------------------------- console */
+
+.console {
+  font-family: var(--mono);
+  font-size: 0.88rem;
+  line-height: 1.85;
+  background: var(--paper-sunk);
+  border: 1px solid var(--rule);
+  padding: 1.25rem 1.4rem;
+  overflow-x: auto;
+  margin: 0 0 1rem;
+}
+
+.console .line {
+  display: block;
+  white-space: pre;
+}
+
+.console .line[data-prompt]::before {
+  content: "$ ";
+  color: var(--accent);
+}
+
+.console .note {
+  color: var(--ink-faint);
+}
+
+.console .out {
+  color: var(--ink-soft);
+}
+
+/* ------------------------------------------------------------------ tables */
+
+.slab {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.slab th,
+.slab td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.7rem 1rem 0.7rem 0;
+  border-bottom: 1px solid var(--rule-hair);
+}
+
+.slab th {
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 0.74rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.slab td code,
+.slab th code {
+  font-size: 0.85em;
+}
+
+.slab tr:last-child td {
+  border-bottom: none;
+}
+
+code {
+  font-family: var(--mono);
+  font-size: 0.88em;
+  background: var(--paper-sunk);
+  padding: 0.1em 0.34em;
+  border: 1px solid var(--rule-hair);
+}
+
+/* ------------------------------------------------------------------- cards */
+
+.cards {
+  display: grid;
+  gap: 1px;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  background: var(--rule-hair);
+  border: 1px solid var(--rule-hair);
+}
+
+.card {
+  display: block;
+  background: var(--paper);
+  padding: 1.5rem 1.4rem;
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.18s ease;
+}
+
+.card:hover,
+.card:focus-visible {
+  background: var(--paper-sunk);
+}
+
+.card .kicker {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.card h3 {
+  margin: 0.6rem 0 0.4rem;
+}
+
+.card p {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--ink-soft);
+}
+
+/* ------------------------------------------------------------------ prose */
+
+.prose {
+  padding: clamp(2rem, 5vw, 3.5rem) 0 0;
+}
+
+.prose > * {
+  max-width: 44rem;
+}
+
+.prose h1 {
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: clamp(1.8rem, 1.4rem + 1.6vw, 2.6rem);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  margin: 0 0 2rem;
+}
+
+.prose h2 {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 1.6rem;
+  line-height: 1.25;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink);
+  margin: 3rem 0 1rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--rule);
+}
+
+.prose h3 {
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 1rem;
+  letter-spacing: -0.01em;
+  margin: 2.25rem 0 0.6rem;
+}
+
+.prose h3 code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 1em;
+}
+
+.prose pre {
+  font-family: var(--mono);
+  font-size: 0.86rem;
+  line-height: 1.7;
+  background: var(--paper-sunk);
+  border: 1px solid var(--rule);
+  border-left: 2px solid var(--accent);
+  padding: 1rem 1.2rem;
+  overflow-x: auto;
+}
+
+.prose pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+}
+
+.prose table {
+  width: 100%;
+  max-width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+  display: block;
+  overflow-x: auto;
+}
+
+.prose th,
+.prose td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.6rem 1rem 0.6rem 0;
+  border-bottom: 1px solid var(--rule-hair);
+}
+
+.prose th {
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.prose blockquote {
+  margin: 1.5rem 0;
+  padding-left: 1.25rem;
+  border-left: 2px solid var(--accent-soft);
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+.prose hr {
+  border: none;
+  border-top: 1px solid var(--rule);
+  margin: 2.5rem 0;
+}
+
+/* The guides separate sections with `---` and then a heading. The heading
+   draws its own rule, so without this you get two, a hand's width apart. */
+.prose hr + h2 {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+}
+
+.prose ul,
+.prose ol {
+  padding-left: 1.3rem;
+}
+
+.prose li {
+  margin-bottom: 0.4rem;
+}
+
+.prose li::marker {
+  color: var(--accent-soft);
+}
+
+/* ----------------------------------------------------------------- footer */
+
+footer {
+  padding: 2.5rem 0 0;
+  border-top: 1px solid var(--rule);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--ink-faint);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 2rem;
+  justify-content: space-between;
+}
+
+footer a {
+  color: var(--ink-soft);
+  text-decoration: none;
+  border-bottom: 1px solid var(--rule);
+}
+
+footer a:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.back {
+  display: inline-block;
+  margin-bottom: 2rem;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  text-decoration: none;
+}
+
+.back::before {
+  content: "← ";
+}
+
+.back:hover {
+  color: var(--accent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}

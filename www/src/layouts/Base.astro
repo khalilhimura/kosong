@@ -1,0 +1,68 @@
+---
+import "../styles/site.css";
+
+const { title, description, wide = false } = Astro.props;
+const REPO = "https://github.com/khalilhimura/kosong";
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="color-scheme" content="light dark" />
+
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+
+    <!-- Both faces are used above the fold, so neither should wait for the
+         stylesheet to be parsed before it starts downloading. -->
+    <link
+      rel="preload"
+      href="/fonts/ibm-plex-mono-latin-600-normal.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/fonts/newsreader-latin-wght-normal.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23191713'/%3E%3Ctext x='5' y='23' font-family='monospace' font-size='18' fill='%23e8873f'%3E$%3C/text%3E%3C/svg%3E"
+    />
+  </head>
+
+  <body>
+    <div class="shell" style={wide ? "" : "max-width: 52rem"}>
+      <header class="masthead">
+        <a class="wordmark" href="/">kosong</a>
+        <nav>
+          <a href="/#install">Install</a>
+          <a href="/#commands">Commands</a>
+          <a href="/guide/troubleshooting">Troubleshooting</a>
+          <a href={`${REPO}/releases`}>Releases</a>
+          <a href={REPO}>Source</a>
+        </nav>
+      </header>
+
+      <slot />
+
+      <footer>
+        <span>Apache-2.0 · not end-to-end encrypted, and says so</span>
+        <span>
+          <a href={REPO}>GitHub</a> ·
+          <a href={`${REPO}/blob/main/SECURITY.md`}>Security</a> ·
+          <a href="/install.sh">install.sh</a>
+        </span>
+      </footer>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "kosong-www",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The kosong project website.",
+  "scripts": {
+    "collect": "node scripts/collect.mjs",
+    "dev": "npm run collect && astro dev",
+    "build": "npm run collect && astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "astro": "7.1.3"
+  }
+}

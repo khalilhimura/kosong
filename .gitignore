@@ -21,3 +21,6 @@ docs/
 # Provider credentials kept locally while setting the service up. A key in a
 # file is one `git add -A` away from being a key in a public repository.
 resend.md
+
+# The website's build output and its collected copies.
+www/dist/
