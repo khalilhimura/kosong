@@ -17,3 +17,7 @@ apps/api/worker-configuration.d.ts
 
 # Internal product and specification documents. Kept locally, not published.
 docs/
+
+# Provider credentials kept locally while setting the service up. A key in a
+# file is one `git add -A` away from being a key in a public repository.
+resend.md

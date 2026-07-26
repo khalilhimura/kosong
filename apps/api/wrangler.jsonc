@@ -11,7 +11,7 @@
   "vars": {
     "ENVIRONMENT": "production",
     // Sending identity for verification emails. Not a secret.
-    "EMAIL_FROM": "kosong <login@kosong.dev>",
+    "EMAIL_FROM": "kosong <login@thefutureissolo.com>",
     // Turnstile is off until a sending domain and site key exist. When on,
     // TURNSTILE_SECRET must also be set.
     "TURNSTILE_ENABLED": "false"
