@@ -36,7 +36,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: rustup show active-toolchain || rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - uses: actions/setup-node@v7
         with:
           node-version: 22
