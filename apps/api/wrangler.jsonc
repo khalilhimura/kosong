@@ -9,7 +9,7 @@
   },
 
   "vars": {
-    "ENVIRONMENT": "development",
+    "ENVIRONMENT": "production",
     // Sending identity for verification emails. Not a secret.
     "EMAIL_FROM": "kosong <login@kosong.dev>",
     // Turnstile is off until a sending domain and site key exist. When on,
@@ -21,9 +21,10 @@
     {
       "binding": "DB",
       "database_name": "kosong",
-      // Replaced by the real id at deploy time; local development and tests
-      // do not use it.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      // The real database on the Himura account. Not a secret — reaching it
+      // still requires Cloudflare credentials, which kosong never holds.
+      // Local development and tests use a miniflare database, not this id.
+      "database_id": "58869958-b5ba-4bc3-aa19-3c53ab2437f1",
       "migrations_dir": "migrations"
     }
   ],
