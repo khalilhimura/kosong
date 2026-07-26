@@ -1,0 +1,24 @@
+version: 2
+
+# The workflows pin third-party actions to commits, which is the point: a
+# floating tag can be moved under us. The cost is that a pin never updates
+# itself, and unlike a stale tag it goes stale *invisibly* — including through
+# a security fix. This is the counterweight. Dependabot opens a pull request
+# when a pinned action publishes a new version, and rewrites both the commit
+# and the `# vX.Y.Z` comment beside it.
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    # One pull request listing every action that moved, rather than four
+    # arriving separately. Actions are updated together or not at all.
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "Bump"
+    labels: ["dependencies"]
+    # A stuck update should be visible, not silently queued behind others.
+    open-pull-requests-limit: 3
