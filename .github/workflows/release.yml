@@ -65,6 +65,23 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME#v}"
+
+          # A tag names a version; the manifest defines one. Nothing until now
+          # made them agree, so a mistyped tag — or a forgotten version bump —
+          # would ship an archive whose name contradicts the binary inside it,
+          # with a signed attestation vouching for the pair. A prerelease
+          # suffix is allowed, but the version it qualifies must be the real
+          # one: v0.1.1-rc.1 requires the manifest to already say 0.1.1.
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            CRATE=$(cargo metadata --format-version 1 --no-deps \
+              | jq -r '.packages[] | select(.name == "kosong-cli") | .version')
+            if [ "${VERSION%%-*}" != "$CRATE" ]; then
+              echo "::error::tag ${GITHUB_REF_NAME} does not match the crate version ${CRATE}"
+              echo "Bump the workspace version in Cargo.toml, or retag." >&2
+              exit 1
+            fi
+          fi
+
           NAME="kosong-${VERSION}-${{ matrix.target }}"
           mkdir -p "dist/$NAME"
 
@@ -119,7 +136,7 @@ jobs:
           cat SHA256SUMS
 
       - name: Create the release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             artifacts/*.tar.gz
