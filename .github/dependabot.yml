@@ -22,3 +22,27 @@ updates:
     labels: ["dependencies"]
     # A stuck update should be visible, not silently queued behind others.
     open-pull-requests-limit: 3
+
+  # The Rust workspace. `cargo deny check` already fails CI on a published
+  # advisory, so this is not the security net — it is what keeps the tree
+  # current enough that the day an advisory does land, the fix is one version
+  # away rather than a year of upgrades away.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      # Routine movement, reviewed together. Most of it lands in Cargo.lock
+      # alone, since the manifest asks for loose ranges.
+      cargo-minor:
+        update-types: ["minor", "patch"]
+      # Majors stay separate on purpose. Clippy runs with `-D warnings`, so a
+      # breaking release fails CI, and finding out which of six crates did it
+      # should not require unpicking one pull request.
+      cargo-major:
+        update-types: ["major"]
+    commit-message:
+      prefix: "Bump"
+    labels: ["dependencies"]
+    open-pull-requests-limit: 5
