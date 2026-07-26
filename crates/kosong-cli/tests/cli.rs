@@ -454,8 +454,20 @@ fn help_lists_only_commands_that_work() {
     assert_eq!(code(&output), 0);
 
     for implemented in [
-        "start", "new", "edit", "show", "preview", "status", "doctor", "login", "logout", "sync",
-        "site", "gh", "cf",
+        "start",
+        "new",
+        "edit",
+        "show",
+        "preview",
+        "status",
+        "doctor",
+        "login",
+        "logout",
+        "delete-account",
+        "sync",
+        "site",
+        "gh",
+        "cf",
     ] {
         assert!(
             text.contains(implemented),
@@ -618,6 +630,82 @@ fn status_still_leaks_no_secret_when_signed_in() {
             "status --json must not contain `{forbidden}`"
         );
     }
+}
+
+#[test]
+fn deleting_an_account_while_signed_out_says_how_to_sign_in() {
+    let sandbox = Sandbox::new();
+
+    let output = sandbox.run(&["delete-account", "--yes"]);
+
+    assert_eq!(code(&output), 3, "stderr: {}", stderr(&output));
+    assert!(stderr(&output).contains("kosong login"));
+}
+
+#[test]
+fn deleting_an_account_dry_run_deletes_nothing() {
+    // The sandbox points at a dead port, so a dry run that reached the network
+    // would fail with the network code rather than succeeding.
+    let sandbox = Sandbox::new();
+    sandbox.run(&["new"]);
+    sandbox.write_session("a-stored-refresh-token");
+
+    let output = sandbox.run(&["delete-account", "--dry-run"]);
+
+    assert_eq!(code(&output), 0, "stderr: {}", stderr(&output));
+    assert!(stdout(&output).contains("nothing was deleted"));
+    assert!(sandbox.session_file().exists(), "the sign-in must survive");
+    assert!(sandbox.document().is_file(), "the page must survive");
+}
+
+#[test]
+fn deleting_an_account_states_what_survives_it() {
+    // The dangerous misunderstanding is that this takes a published page down.
+    // It does not, and the command has to say so before it asks.
+    let sandbox = Sandbox::new();
+    sandbox.write_session("a-stored-refresh-token");
+
+    let text = stdout(&sandbox.run(&["delete-account", "--dry-run"]));
+
+    assert!(
+        text.contains("kosong.md"),
+        "must name the local file: {text}"
+    );
+    assert!(
+        text.to_lowercase().contains("published"),
+        "must address an already-published site: {text}"
+    );
+}
+
+#[test]
+fn deleting_an_account_without_a_terminal_needs_an_explicit_yes() {
+    // stdin is not a terminal here, so the confirmation takes its default. That
+    // default must be no: an unattended script must not be able to delete an
+    // account by omission.
+    let sandbox = Sandbox::new();
+    sandbox.write_session("a-stored-refresh-token");
+
+    let output = sandbox.run(&["delete-account"]);
+
+    assert_eq!(code(&output), 2, "stderr: {}", stderr(&output));
+    assert!(stderr(&output).contains("Nothing was deleted"));
+    assert!(sandbox.session_file().exists(), "the sign-in must survive");
+}
+
+#[test]
+fn a_failed_deletion_keeps_the_sign_in() {
+    // The account is still there, so the credential for it must be too.
+    // Clearing it locally would leave the user unable to try again.
+    let sandbox = Sandbox::new();
+    sandbox.write_session("a-stored-refresh-token");
+
+    let output = sandbox.run(&["delete-account", "--yes"]);
+
+    assert_eq!(code(&output), 5, "stderr: {}", stderr(&output));
+    assert!(
+        sandbox.session_file().exists(),
+        "a network failure must not sign the user out"
+    );
 }
 
 #[test]

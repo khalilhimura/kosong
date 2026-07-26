@@ -85,6 +85,10 @@ fn run(cli: &Cli, ui: Ui) -> CliResult<()> {
 
         Command::Logout => commands::login::logout(&context),
 
+        Command::DeleteAccount { dry_run, yes } => {
+            commands::account::delete(&context, *dry_run, *yes)
+        }
+
         Command::Gh { subcommand, name } => {
             commands::provider::run_gh(&context, *subcommand, name.clone())
         }

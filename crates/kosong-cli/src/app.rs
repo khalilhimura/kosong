@@ -98,6 +98,19 @@ pub enum Command {
     /// Sign out on this computer.
     Logout,
 
+    /// Delete your account and the page stored on the server.
+    ///
+    /// Nothing on this computer is deleted, and a published site stays online.
+    DeleteAccount {
+        /// Show what would be deleted, without deleting it.
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Do not ask before deleting.
+        #[arg(long)]
+        yes: bool,
+    },
+
     /// Ask GitHub CLI something about your setup.
     Gh {
         /// What to look up.

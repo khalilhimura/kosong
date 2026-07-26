@@ -1,5 +1,6 @@
 //! Command implementations.
 
+pub mod account;
 pub mod doctor;
 pub mod edit;
 pub mod login;

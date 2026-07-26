@@ -61,6 +61,7 @@ see the plan without doing anything.
 | `kosong status` | Report current state | Software can describe itself |
 | `kosong doctor` | Check your setup | Prerequisites can be checked, not guessed |
 | `kosong login` / `logout` | Sign in by email code | — |
+| `kosong delete-account` | Delete your account and its stored page | Deleting an account is not deleting your files |
 | `kosong sync` | Keep a private remote copy | — |
 | `kosong gh` / `kosong cf` | Ask GitHub or Cloudflare about your setup | — |
 | `kosong site init` | Make a publishable folder | Git tracks a folder's history |
@@ -136,7 +137,7 @@ your deployment history and tells you exactly where to click instead.
 
 ```bash
 cargo build --release      # the CLI
-cargo test --workspace     # 249 tests
+cargo test --workspace     # 254 tests
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 

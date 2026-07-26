@@ -78,6 +78,20 @@ Please do not open a public issue for anything exploitable.
 We will not take legal action against good-faith research that stays within your
 own account and does not degrade the service for others.
 
+## Deleting your account
+
+```bash
+kosong delete-account --dry-run   # see exactly what goes
+kosong delete-account
+```
+
+This removes your sign-in, every session on every computer, and the private copy
+of your page on the server. It happens immediately and cannot be undone.
+
+It deletes nothing on your computer, and **it does not take a published site
+offline** — that lives in your own GitHub repository and Cloudflare account,
+which kosong has no credentials for. Remove it there if you want it gone.
+
 ## Known limitations in v1
 
 1. **No end-to-end encryption.** As above.
