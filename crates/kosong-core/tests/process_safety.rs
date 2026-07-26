@@ -549,7 +549,10 @@ fn an_over_long_name_is_refused_with_its_own_message() {
 #[test]
 fn an_owner_qualified_repository_is_accepted() {
     let operation = GitHubOperation::repo_view("khalilhimura/kosong").unwrap();
-    assert_eq!(operation.args(), vec!["repo", "view", "khalilhimura/kosong"]);
+    assert_eq!(
+        operation.args(),
+        vec!["repo", "view", "khalilhimura/kosong"]
+    );
 }
 
 #[test]
