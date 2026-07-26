@@ -1,0 +1,158 @@
+---
+/**
+ * The one page.
+ *
+ * # Why there is no Markdown parser here
+ *
+ * An earlier version of this template parsed the document with `marked` and
+ * read its front matter in JavaScript. That was a mistake, and a dangerous
+ * one: `kosong preview` strips raw HTML and blocks `javascript:` URLs, but the
+ * JavaScript path did not — so a page could look safe in preview and publish a
+ * live `<script>` tag.
+ *
+ * Two implementations of one security policy will always drift. So `kosong`
+ * renders the Markdown itself, with the same code and the same tests that back
+ * local preview, and writes the result here as:
+ *
+ *   src/content/page.html   already-rendered, already-safe HTML
+ *   src/content/page.json   title and description
+ *
+ * Both are regenerated from the user's document on every `kosong site publish`.
+ * What you preview is what you publish, by construction.
+ */
+import html from "../content/page.html?raw";
+import meta from "../content/page.json";
+
+const title = meta.title?.trim() || "My page";
+const description = meta.description?.trim() ?? "";
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    {description && <meta name="description" content={description} />}
+    {/* An empty favicon, so a browser does not request one that is not there. */}
+    <link rel="icon" href="data:," />
+  </head>
+  <body>
+    {/* Safe by construction: kosong stripped raw HTML and blocked dangerous
+        URL schemes before writing this file. */}
+    <main set:html={html} />
+
+    <style is:global>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 2.5rem 1.25rem;
+        font:
+          16px/1.65 -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          Helvetica,
+          Arial,
+          sans-serif;
+        color: #1a1a1a;
+        background: #fff;
+      }
+      main {
+        max-width: 42rem;
+        margin: 0 auto;
+      }
+      h1,
+      h2,
+      h3 {
+        line-height: 1.25;
+        margin: 2rem 0 0.75rem;
+      }
+      h1 {
+        font-size: 2rem;
+        margin-top: 0;
+      }
+      p,
+      ul,
+      ol,
+      blockquote,
+      table {
+        margin: 0 0 1rem;
+      }
+      a {
+        color: #0b57d0;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.9em;
+        background: #f2f2f2;
+        padding: 0.15em 0.35em;
+        border-radius: 3px;
+      }
+      pre {
+        background: #f6f6f6;
+        padding: 1rem;
+        overflow-x: auto;
+        border-radius: 6px;
+      }
+      pre code {
+        background: none;
+        padding: 0;
+      }
+      blockquote {
+        border-left: 3px solid #ddd;
+        margin-left: 0;
+        padding-left: 1rem;
+        color: #555;
+      }
+      img {
+        max-width: 100%;
+        height: auto;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        display: block;
+        overflow-x: auto;
+      }
+      th,
+      td {
+        border: 1px solid #ddd;
+        padding: 0.5rem;
+        text-align: left;
+      }
+      hr {
+        border: 0;
+        border-top: 1px solid #ddd;
+        margin: 2rem 0;
+      }
+      @media (prefers-color-scheme: dark) {
+        body {
+          color: #e8e8e8;
+          background: #131313;
+        }
+        a {
+          color: #8ab4f8;
+        }
+        code {
+          background: #242424;
+        }
+        pre {
+          background: #1c1c1c;
+        }
+        blockquote {
+          border-left-color: #3a3a3a;
+          color: #aaa;
+        }
+        th,
+        td,
+        hr {
+          border-color: #333;
+        }
+      }
+    </style>
+  </body>
+</html>

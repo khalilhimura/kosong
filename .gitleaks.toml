@@ -1,0 +1,36 @@
+# Secret-scanning configuration.
+#
+# The default rules are kept in full. This file only narrows one unavoidable
+# false positive: the redaction tests must contain credential-*shaped* strings,
+# because their whole purpose is proving those strings never reach a log or a
+# terminal.
+#
+# The allowlist is deliberately scoped to one file. A scanner that is broadly
+# muted is a scanner nobody reads.
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "kosong-redaction-fixtures"
+description = "Placeholder tokens in the redaction tests"
+# Never matches: this rule exists only to carry the allowlist below.
+regex = '''$a'''
+
+[allowlist]
+description = "Test fixtures that must look like credentials to be useful"
+paths = [
+    # Asserts that GitHub token shapes are stripped from provider output.
+    '''crates/kosong-core/tests/process_safety\.rs''',
+]
+regexes = [
+    # Every fixture spells out that it is not real.
+    '''ghp_16CharactersOrMore[A-Za-z]*''',
+    '''gh[ousr]_16CharactersOrMore[A-Za-z]*''',
+    '''github_pat_11ABCDEFG0abcdefghijkl''',
+    # Test-only secrets for the Worker test runner, defined in vitest.config.ts
+    # and never used outside it. Real ones are set with `wrangler secret put`.
+    '''test-(code|token|ip)-secret''',
+    # Documented placeholders in the example files.
+    '''replace-me''',
+]

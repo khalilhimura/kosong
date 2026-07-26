@@ -1,0 +1,42 @@
+[workspace]
+resolver = "2"
+members = ["crates/kosong-core", "crates/kosong-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "Apache-2.0"
+repository = "https://github.com/mesolitica/kosong"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_yaml_ng = "0.10"
+serde_json = "1"
+toml = "0.9"
+thiserror = "2"
+camino = { version = "1", features = ["serde1"] }
+clap = { version = "4", features = ["derive"] }
+directories-next = "2"
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
+# rustls rather than native-tls: one fewer system dependency to explain when a
+# beginner's install fails.
+reqwest = { version = "0.13", default-features = false, features = [
+    "json",
+    "rustls",
+    # The system trust store, not a bundled root set: a user behind a
+    # corporate proxy that re-signs TLS should not have to debug why kosong
+    # alone cannot reach the network.
+    "rustls-native-certs",
+    "charset",
+    "http2",
+] }
+tokio = { version = "1", features = ["rt", "macros", "time", "process"] }
+base64 = "0.23"
+sha2 = "0.11"
+time = { version = "0.3", features = ["formatting", "parsing", "macros", "local-offset"] }
+ulid = "1"
+
+[profile.release]
+lto = "thin"
+strip = true

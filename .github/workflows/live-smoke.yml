@@ -1,0 +1,136 @@
+name: Live smoke
+
+# Manual only, and gated on a protected environment.
+#
+# §15 requires "a manual, environment-protected live smoke workflow using a
+# disposable GitHub account/repository and Cloudflare Pages project". Everything
+# in CI runs against fakes, which proves kosong sends the right arguments but
+# not that those arguments still mean what the providers think they mean.
+#
+# That distinction is the point. §13.4 warns that provider syntax drifts — and
+# it already has: Wrangler has no Pages rollback command, contrary to what the
+# specification assumed. Only a live run catches the next one.
+#
+# This never runs on a push. It costs real resources and touches real accounts.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type "yes" to run against real accounts
+        required: true
+        default: "no"
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Against real providers
+    runs-on: ubuntu-latest
+    if: inputs.confirm == 'yes'
+    # Holds GH_TOKEN and CLOUDFLARE_API_TOKEN for a **disposable** account.
+    # Never a personal one: this workflow creates and deletes repositories.
+    environment: live-smoke
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Confirm the providers still speak the expected language
+        # Checked before anything is created, so a syntax drift is reported
+        # rather than discovered halfway through a deployment.
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          npm install -g wrangler
+
+          gh auth status
+          wrangler whoami
+
+          # §13.4: the rollback situation is re-verified every run, because the
+          # day this assertion fails is the day kosong could offer a real
+          # `site rollback`.
+          if wrangler pages deployment --help 2>&1 | grep -qi 'rollback'; then
+            echo "::warning::Wrangler now has a Pages rollback command."
+            echo "::warning::Revisit spec/extension-boundaries.md and site rollback."
+          else
+            echo "Confirmed: Wrangler still has no Pages rollback command."
+          fi
+
+      - name: A full publish, end to end
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          BIN="$PWD/target/release/kosong"
+          WORK="$(mktemp -d)"
+          NAME="kosong-smoke-${GITHUB_RUN_ID}"
+          export KOSONG_CONFIG_DIR="$WORK/config" KOSONG_SESSION_FILE="$WORK/session" NO_COLOR=1
+          echo "SMOKE_NAME=$NAME" >> "$GITHUB_ENV"
+
+          git config --global user.name "kosong smoke"
+          git config --global user.email "smoke@example.invalid"
+
+          "$BIN" --workspace "$WORK" new --title "Live Smoke ${GITHUB_RUN_ID}"
+          "$BIN" --workspace "$WORK" site init "$NAME" --yes
+          "$BIN" --workspace "$WORK" site publish --yes | tee "$WORK/publish.log"
+
+          grep -oE 'https://[a-z0-9.-]+\.pages\.dev' "$WORK/publish.log" | head -1 > "$WORK/url"
+          URL="$(cat "$WORK/url")"
+          test -n "$URL"
+
+          # Cloudflare needs a moment to serve a brand new deployment.
+          for _ in $(seq 1 30); do
+            curl -fsS "$URL" >/dev/null 2>&1 && break
+            sleep 5
+          done
+          curl -fsS "$URL" | grep -q "Live Smoke ${GITHUB_RUN_ID}"
+          echo "Published and reachable at $URL"
+
+      - name: A failed build must not replace a working deployment
+        # §13.3 and the Phase C exit gate. This is the assertion that matters
+        # most: breaking a live site is worse than failing to update it.
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          BIN="$PWD/target/release/kosong"
+          WORK="$(find /tmp -maxdepth 1 -name 'tmp*' -newer Cargo.toml | head -1)"
+          export KOSONG_CONFIG_DIR="$WORK/config" KOSONG_SESSION_FILE="$WORK/session" NO_COLOR=1
+          URL="$(cat "$WORK/url")"
+
+          # Break the build deliberately.
+          echo "this is not valid astro config" > "$WORK/$SMOKE_NAME/astro.config.mjs"
+
+          if "$BIN" --workspace "$WORK" site publish --yes; then
+            echo "::error::publish succeeded despite a broken build"
+            exit 1
+          fi
+
+          # The previous deployment must still be serving.
+          curl -fsS "$URL" | grep -q "Live Smoke ${GITHUB_RUN_ID}"
+          echo "Confirmed: the known-good deployment survived a failed build."
+
+      - name: Clean up
+        # Always, including after a failure: a leaked repository or Pages
+        # project is a real cost and a real disclosure.
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set +e
+          gh repo delete "$SMOKE_NAME" --yes
+          wrangler pages project delete "$SMOKE_NAME" --yes
+          echo "cleanup attempted for $SMOKE_NAME"

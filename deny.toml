@@ -1,0 +1,46 @@
+# cargo-deny configuration.
+#
+# §15 requires dependency and licence checking in CI. The point is to notice a
+# problem when a dependency is added, not to discover it at release time.
+
+[advisories]
+# Fail on any known vulnerability. Add an exception here only with a comment
+# saying why it does not apply.
+yanked = "deny"
+ignore = []
+
+[licenses]
+# Permissive licences only. kosong ships as a binary, and a copyleft
+# dependency would change what a user may do with it.
+version = 2
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    # Mozilla's CA certificate bundle, shipped by rustls. A permissive data
+    # licence, not a code licence, and standard for root-store crates.
+    "CDLA-Permissive-2.0",
+    "Zlib",
+    "MPL-2.0",
+]
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+deny = [
+    # reqwest is configured for rustls precisely so a beginner's install never
+    # fails on a missing system library. If openssl reappears, a feature flag
+    # regressed and the install story broke with it.
+    { name = "openssl-sys", reason = "kosong uses rustls; see reqwest features in Cargo.toml" },
+    { name = "openssl", reason = "kosong uses rustls; see reqwest features in Cargo.toml" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

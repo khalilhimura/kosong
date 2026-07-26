@@ -1,0 +1,9 @@
+[toolchain]
+# Pinned for reproducible builds. Edition 2024 requires >= 1.85.
+#
+# This pin is per-project: rustup reads the nearest rust-toolchain.toml, so
+# other Rust projects on this machine keep their own versions. Bump
+# deliberately, together with workspace.package.rust-version.
+channel = "1.97.1"
+profile = "minimal"
+components = ["rustfmt", "clippy"]

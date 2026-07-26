@@ -1,0 +1,27 @@
+# Local development secrets for `wrangler dev`.
+#
+# Copy to `.dev.vars`, which is gitignored. These values are for your machine
+# only. Production secrets are set with `wrangler secret put <NAME>` and never
+# committed anywhere.
+#
+# Generate a strong value for each:
+#   openssl rand -base64 48
+
+# Hashes verification codes at rest. Rotating this invalidates every
+# outstanding code, which is a safe thing to do at any time.
+CODE_HMAC_SECRET="replace-me"
+
+# Signs access tokens and hashes refresh tokens. Rotating this signs everyone
+# out, because no existing token will verify.
+TOKEN_HMAC_SECRET="replace-me"
+
+# Hashes client IPs before they are stored for rate limiting. Rotating it
+# resets rate-limit counters.
+IP_HASH_SECRET="replace-me"
+
+# Transactional email. Leave unset locally: without it, the Worker logs the
+# code instead of sending mail, and says loudly that it did so.
+# RESEND_API_KEY=""
+
+# Only needed when TURNSTILE_ENABLED is "true" in wrangler.jsonc.
+# TURNSTILE_SECRET=""

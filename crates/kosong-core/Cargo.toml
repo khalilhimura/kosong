@@ -1,0 +1,36 @@
+[package]
+name = "kosong-core"
+description = "Local document core for kosong: Open Knowledge Format v0.1 parsing, validation, and workspace safety."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+# serde_yaml_ng is the maintained continuation of serde_yaml, which upstream
+# archived. Same API surface; keeps `cargo deny` free of an unmaintained advisory.
+serde_yaml_ng = { workspace = true }
+thiserror = { workspace = true }
+time = { workspace = true }
+ulid = { workspace = true }
+toml = { workspace = true }
+camino = { workspace = true }
+directories-next = { workspace = true }
+pulldown-cmark = { workspace = true }
+reqwest = { workspace = true }
+tokio = { workspace = true }
+serde_json = { workspace = true }
+base64 = { workspace = true }
+sha2 = { workspace = true }
+
+# keyring 4's default `v1` feature already selects the right credential store
+# per platform (Keychain on macOS, Secret Service on Linux), so no per-target
+# configuration is needed.
+keyring = "4"
+
+[dev-dependencies]
+serde_yaml_ng = { workspace = true }
+tempfile = "3"
+tokio = { workspace = true, features = ["rt", "macros", "time", "process"] }

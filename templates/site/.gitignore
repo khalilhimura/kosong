@@ -1,0 +1,7 @@
+node_modules
+dist
+.astro
+.DS_Store
+
+# kosong's own local notes about this site. Not part of the website.
+.kosong/

@@ -1,0 +1,176 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A new push supersedes an in-flight run on the same branch.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # A failed build should not be diagnosed from a stack-trace-free panic.
+  RUST_BACKTRACE: 1
+
+jobs:
+  rust:
+    name: Rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # §11 names current macOS and mainstream Linux as the supported set.
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # rust-toolchain.toml pins the version, so nothing is specified here:
+      # the checked-in pin is the single source of truth.
+      - name: Install toolchain
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup component add rustfmt clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Formatting
+        run: cargo fmt --all --check
+
+      - name: Lints
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Tests
+        run: cargo test --workspace
+
+      # The site workflow tests spawn fake POSIX shell scripts, so they are
+      # meaningful only where /bin/sh exists.
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Smoke test the binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="./target/release/kosong"
+          WORK="$(mktemp -d)"
+          export KOSONG_CONFIG_DIR="$WORK/config"
+          export KOSONG_SESSION_FILE="$WORK/session"
+          export NO_COLOR=1
+
+          "$BIN" --version
+          "$BIN" --workspace "$WORK" new --title "CI Smoke Test"
+          "$BIN" --workspace "$WORK" status --json | tee "$WORK/status.json"
+
+          # The §7 preview assertion, run for real.
+          "$BIN" --workspace "$WORK" preview --port 4173 &
+          PREVIEW_PID=$!
+          for _ in $(seq 1 20); do
+            curl -fsS http://127.0.0.1:4173 >/dev/null 2>&1 && break
+            sleep 0.5
+          done
+          curl -fsS http://127.0.0.1:4173 | grep -q 'CI Smoke Test'
+          kill "$PREVIEW_PID"
+
+          echo "smoke test passed"
+
+      - name: Local work needs no external tool
+        shell: bash
+        # Local-first is a promise, not an aspiration. With an empty PATH there
+        # is no git, gh, npm, or wrangler to fall back on, and `doctor` must
+        # still report a healthy setup. This is the Phase A exit gate.
+        run: |
+          set -euo pipefail
+          BIN="$PWD/target/release/kosong"
+          WORK="$(mktemp -d)"
+          export KOSONG_CONFIG_DIR="$WORK/config" KOSONG_SESSION_FILE="$WORK/session" NO_COLOR=1
+
+          "$BIN" --workspace "$WORK" new --title "Offline"
+          env PATH="" "$BIN" --workspace "$WORK" doctor --json | grep -q '"healthy": true'
+          env PATH="" "$BIN" --workspace "$WORK" status --json | grep -q '"valid": true'
+
+  dependencies:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@cargo-deny
+      - name: Check licences, advisories, and sources
+        run: cargo deny check
+
+  api:
+    name: Worker API
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/api/package-lock.json
+
+      - run: npm ci
+      - name: Type check
+        run: npm run typecheck
+      - name: Tests
+        run: npm test
+
+  template:
+    name: Site template
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: templates/site
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # The template is what every user's site is built from, so a build
+      # failure here is a failure for everyone, not just this repository.
+      - name: Install pinned dependencies
+        run: npm install --ignore-scripts --no-fund --no-audit
+
+      - name: Build
+        run: npm run build
+
+      - name: The build must produce a page
+        run: test -f dist/index.html
+
+      - name: The published page must carry no script
+        # Regression guard for a real bug. An earlier template parsed Markdown
+        # in JavaScript, so raw HTML and `javascript:` URLs survived into the
+        # published page even though `kosong preview` stripped them — a page
+        # could look safe in preview and publish something live. kosong now
+        # renders the HTML itself; this proves the template adds nothing back.
+        run: |
+          set -euo pipefail
+          printf '<h1>Probe</h1>\n<p>ordinary text</p>\n' > src/content/page.html
+          npm run build
+          if grep -qiE '<script|javascript:' dist/index.html; then
+            echo "::error::the template reintroduced executable content"
+            exit 1
+          fi
+          grep -q 'Probe' dist/index.html
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,135 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  # Lets a release be rehearsed without cutting one.
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build artifacts without publishing
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  # Required for build provenance attestation.
+  id-token: write
+  attestations: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # §16: macOS arm64 and x86_64, Linux x86_64 and aarch64.
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup target add ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: The binary runs before it is shipped
+        # A cross-built artifact cannot be smoke-tested, but a native one can,
+        # and shipping a binary that will not start is the worst release bug.
+        if: matrix.target != 'aarch64-unknown-linux-gnu' || runner.arch == 'ARM64'
+        run: ./target/${{ matrix.target }}/release/kosong --version
+
+      - name: Package
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          NAME="kosong-${VERSION}-${{ matrix.target }}"
+          mkdir -p "dist/$NAME"
+
+          cp "target/${{ matrix.target }}/release/kosong" "dist/$NAME/"
+          cp README.md SECURITY.md "dist/$NAME/" 2>/dev/null || true
+
+          tar -C dist -czf "dist/$NAME.tar.gz" "$NAME"
+
+          # A checksum per artifact, so a download can be verified on its own.
+          ( cd dist && shasum -a 256 "$NAME.tar.gz" > "$NAME.tar.gz.sha256" )
+
+          echo "archive=dist/$NAME.tar.gz" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Attest provenance
+        # §16 asks for provenance where the tooling supports it. This records,
+        # verifiably, which workflow and which commit produced the artifact.
+        if: github.event_name == 'push'
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: ${{ steps.package.outputs.archive }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.name }}
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+          if-no-files-found: error
+
+  publish:
+    name: Publish
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: One manifest for every artifact
+        run: |
+          set -euo pipefail
+          cd artifacts
+          cat *.sha256 > SHA256SUMS
+          echo "--- SHA256SUMS ---"
+          cat SHA256SUMS
+
+      - name: Create the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/*.tar.gz
+            artifacts/SHA256SUMS
+          generate_release_notes: true
+          body: |
+            ## Verifying this download
+
+            Every archive is checksummed. Before installing, check that what you
+            downloaded is what was built:
+
+            ```bash
+            shasum -a 256 -c SHA256SUMS --ignore-missing
+            ```
+
+            The installer at https://get.kosong.dev does this for you.

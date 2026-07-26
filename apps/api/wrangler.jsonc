@@ -1,0 +1,44 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "kosong-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-26",
+
+  "observability": {
+    "enabled": true
+  },
+
+  "vars": {
+    "ENVIRONMENT": "development",
+    // Sending identity for verification emails. Not a secret.
+    "EMAIL_FROM": "kosong <login@kosong.dev>",
+    // Turnstile is off until a sending domain and site key exist. When on,
+    // TURNSTILE_SECRET must also be set.
+    "TURNSTILE_ENABLED": "false"
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "kosong",
+      // Replaced by the real id at deploy time; local development and tests
+      // do not use it.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  "r2_buckets": [
+    {
+      "binding": "DOCUMENTS",
+      "bucket_name": "kosong-documents"
+    }
+  ]
+
+  // Secrets are never in this file. Set them with `wrangler secret put`:
+  //   CODE_HMAC_SECRET   hashes verification codes at rest
+  //   TOKEN_HMAC_SECRET  signs access tokens and hashes refresh tokens
+  //   IP_HASH_SECRET     hashes request IPs before they are stored
+  //   RESEND_API_KEY     transactional email
+  //   TURNSTILE_SECRET   only when TURNSTILE_ENABLED is "true"
+}
