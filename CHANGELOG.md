@@ -10,6 +10,15 @@ and environment variables — will not change without being named here.
 
 ## Unreleased
 
+Nothing yet.
+
+## [0.1.0] — 2026-07-26
+
+First release. The local half of kosong is complete and works with no
+account and no network; the account features need a deployed service, and
+the install host in the README does not exist yet — install from a release
+archive until it does.
+
 ### Added
 
 - `kosong delete-account` deletes your account and the page stored on the
@@ -54,8 +63,4 @@ and environment variables — will not change without being named here.
 - [`guide/course-outline.md`](guide/course-outline.md) — the five course
   modules mapped to real commands and the artefacts they produce.
 
-<!--
-Releases below this line. Each gets its own section when a tag is cut:
-
-## [0.1.0] — YYYY-MM-DD
--->
+[0.1.0]: https://github.com/khalilhimura/kosong/releases/tag/v0.1.0

@@ -69,7 +69,10 @@ jobs:
           mkdir -p "dist/$NAME"
 
           cp "target/${{ matrix.target }}/release/kosong" "dist/$NAME/"
-          cp README.md SECURITY.md "dist/$NAME/" 2>/dev/null || true
+          # LICENSE is not optional: Apache-2.0 §4(a) requires that recipients
+          # of the work receive a copy of the licence with it.
+          cp LICENSE "dist/$NAME/"
+          cp README.md SECURITY.md CHANGELOG.md "dist/$NAME/" 2>/dev/null || true
 
           tar -C dist -czf "dist/$NAME.tar.gz" "$NAME"
 
