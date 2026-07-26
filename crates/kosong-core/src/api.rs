@@ -83,7 +83,11 @@ impl ApiError {
             Self::Server { request_id } => {
                 format!("This is a problem on our side. If you report it, quote: {request_id}")
             }
-            Self::Malformed => "Try updating kosong: kosong update --check".into(),
+            // Not "run kosong update": no such command exists, and sending
+            // someone to one is how a repair action stops being trusted.
+            Self::Malformed => "Install the current version of kosong:\n  \
+                 curl -fsSL https://get.kosong.dev | sh"
+                .into(),
         }
     }
 

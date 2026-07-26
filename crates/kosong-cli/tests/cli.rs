@@ -484,6 +484,99 @@ fn help_lists_only_commands_that_work() {
 }
 
 #[test]
+fn every_command_a_repair_suggests_actually_exists() {
+    // Regression: two repair actions told the user to run `kosong update
+    // --check`, which was never built. A next step that fails when you follow
+    // it is worse than no next step — it teaches that the tool's own advice
+    // cannot be trusted, which is the experience kosong exists to replace.
+    let implemented = implemented_commands();
+
+    let sandbox = Sandbox::new();
+    // A document written by a future profile: the failure that used to point
+    // at the missing command.
+    sandbox.write_document(
+        "---\ntype: Page\ntitle: From the future\nkosong:\n  profile: 99\n---\n\n# Hello\n",
+    );
+
+    let failures = [
+        vec!["status"],
+        vec!["show"],
+        vec!["sync"],
+        vec!["login", "--email", "not-an-address"],
+        vec!["preview", "--port", "1"],
+    ];
+
+    for args in failures {
+        let output = sandbox.run(&args);
+        let text = stderr(&output);
+
+        for suggested in suggested_commands(&text) {
+            assert!(
+                implemented.contains(&suggested),
+                "`kosong {args:?}` suggests `kosong {suggested}`, which is not a command.\n\
+                 stderr was:\n{text}"
+            );
+        }
+    }
+}
+
+/// Subcommand names from `kosong --help`, as the user would find them.
+fn implemented_commands() -> Vec<String> {
+    let output = Command::new(binary())
+        .arg("--help")
+        .env("NO_COLOR", "1")
+        .output()
+        .expect("run kosong --help");
+
+    stdout(&output)
+        .lines()
+        .skip_while(|line| !line.starts_with("Commands:"))
+        .skip(1)
+        .take_while(|line| line.starts_with("  "))
+        .filter_map(|line| line.split_whitespace().next())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Every `kosong <word>` a piece of output tells the reader to *run*.
+///
+/// Only the three shapes the CLI actually uses to give an instruction count:
+/// a line that is the command itself, one quoted in backticks, and one after
+/// `Run:`. Prose that merely says the word — "this file uses kosong profile
+/// 99" — is describing, not instructing.
+fn suggested_commands(text: &str) -> Vec<String> {
+    let mut found = Vec::new();
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+
+        for (index, _) in trimmed.match_indices("kosong ") {
+            let instructing = index == 0
+                || trimmed[..index].ends_with('`')
+                || trimmed[..index].to_ascii_lowercase().ends_with("run: ");
+            if !instructing {
+                continue;
+            }
+
+            let rest = &trimmed[index + "kosong ".len()..];
+            let word: String = rest
+                .split_whitespace()
+                .next()
+                .unwrap_or_default()
+                .trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-')
+                .to_owned();
+
+            // Flags belong to whichever command precedes them.
+            if !word.is_empty() && !word.starts_with('-') {
+                found.push(word);
+            }
+        }
+    }
+
+    found
+}
+
+#[test]
 fn an_unknown_command_fails_without_panicking() {
     let output = Command::new(binary())
         .arg("definitely-not-a-command")

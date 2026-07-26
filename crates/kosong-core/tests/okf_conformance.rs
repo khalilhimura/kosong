@@ -439,7 +439,20 @@ kosong:
 ";
     let err = Document::parse(source).unwrap_err();
     assert!(matches!(err, OkfError::UnsupportedProfile { .. }));
-    assert!(err.repair().contains("kosong update"));
+
+    // This assertion used to require the repair to say `kosong update`, which
+    // pinned a defect in place: no such command exists, so anyone following
+    // the advice got `unrecognized subcommand`. A repair must name something
+    // the reader can actually do.
+    let repair = err.repair();
+    assert!(
+        repair.contains("get.kosong.dev"),
+        "the repair must point at a real way to get a newer kosong: {repair}"
+    );
+    assert!(
+        !repair.contains("kosong update"),
+        "`kosong update` is not a command: {repair}"
+    );
 }
 
 #[test]

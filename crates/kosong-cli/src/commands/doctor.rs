@@ -159,6 +159,19 @@ fn print_human(context: &Context, report: &Report) {
     if report.healthy {
         ui.blank();
         ui.say("Everything kosong needs for local work is in place.");
+    }
+
+    // §9.2 gives every command one lesson to teach, and this is doctor's. It
+    // is said whether or not anything failed: the point is not that today's
+    // setup is fine, it is that a setup is a thing you can ask about at all
+    // rather than guess at after something breaks.
+    ui.blank();
+    ui.lesson(
+        "Nothing here was guessed. Each line is a question kosong asked your computer,\n\
+         and you can ask the same questions yourself at any time.",
+    );
+
+    if report.healthy {
         if let Ok(onboarding) = context.onboarding() {
             ui.next_command(onboarding.next_step().command());
         }

@@ -144,7 +144,12 @@ impl OkfError {
                 "The `kosong:` block needs indented `key: value` lines beneath it.".into()
             }
             Self::UnsupportedProfile { .. } => {
-                "This file was made by a newer kosong. Run: kosong update --check".into()
+                // Not "run kosong update": there is no such command, and a
+                // repair that points at something that does not exist is worse
+                // than no repair at all.
+                "This file was made by a newer kosong. Install the current version:\n  \
+                 curl -fsSL https://get.kosong.dev | sh"
+                    .into()
             }
             Self::KosongMissingField { field } => {
                 format!("Add `{field}` inside the `kosong:` block, or delete the whole block and run: kosong status")
