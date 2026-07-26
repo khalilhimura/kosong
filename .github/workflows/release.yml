@@ -86,7 +86,7 @@ jobs:
         # §16 asks for provenance where the tooling supports it. This records,
         # verifiably, which workflow and which commit produced the artifact.
         if: github.event_name == 'push'
-        uses: actions/attest-build-provenance@v1
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: ${{ steps.package.outputs.archive }}
 
