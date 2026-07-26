@@ -22,6 +22,10 @@ and environment variables — will not change without being named here.
 
 ### Fixed
 
+- Repair advice no longer points at `kosong update --check`, a command that
+  does not exist. Anyone who followed it got `unrecognized subcommand`. Both
+  places now point at the install command. A test walks real failure output and
+  checks that every command kosong tells you to run is one it has.
 - When the server refuses a `kosong sync --push` because the page changed
   underneath it, the saved `server-version.md` now holds the version that is
   actually on the server. It previously held the copy read *before* the push —
@@ -36,7 +40,9 @@ and environment variables — will not change without being named here.
   download URL from the old path, so the published installer would have fetched
   from somewhere that does not exist.
 - CI and release workflows use `actions/checkout@v7` and `actions/setup-node@v7`,
-  ahead of GitHub's removal of Node.js 20 from the runners.
+  ahead of GitHub's removal of Node.js 20 from the runners. The release
+  workflow's `upload-artifact` and `download-artifact` moved for the same
+  reason, found by rehearsing a release rather than waiting for a tag.
 
 ### Documentation
 
