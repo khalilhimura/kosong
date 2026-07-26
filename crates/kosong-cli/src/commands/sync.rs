@@ -113,14 +113,7 @@ pub fn run(context: &Context, direction: Direction) -> CliResult<()> {
 
         SyncAction::Push { if_match } => {
             let bytes = local_bytes.expect("a push requires a local document");
-            push(
-                context,
-                &remote,
-                &workspace,
-                &bytes,
-                &if_match,
-                remote_document.as_ref(),
-            )
+            push(context, &remote, &workspace, &bytes, &if_match)
         }
 
         SyncAction::Pull => {
@@ -142,7 +135,6 @@ fn push(
     workspace: &Workspace,
     bytes: &[u8],
     if_match: &str,
-    remote_document: Option<&kosong_core::api::RemoteDocument>,
 ) -> CliResult<()> {
     let ui = context.ui;
 
@@ -166,8 +158,45 @@ fn push(
         Err(error) if error.code == "DOCUMENT_CONFLICT" => {
             // Someone wrote between the read and the write. Both versions are
             // preserved rather than one being lost to a race.
-            let remote_bytes = remote_document.map(|d| d.bytes.clone()).unwrap_or_default();
-            report_conflict(context, workspace, bytes, &remote_bytes)
+            //
+            // The server's 409 carries only metadata — an etag, a timestamp, a
+            // size — so the newer bytes have to be fetched. The copy read
+            // before the push is precisely the version that is *not* on the
+            // server any more; showing it as "the server's" would have the
+            // user merge against something nobody holds, and pushing that
+            // merge would drop the other machine's work without ever showing
+            // it to them.
+            let current = remote.with_access_token(|token| {
+                let client = remote.client().clone();
+                async move { client.get_document(&token).await }
+            });
+
+            match current {
+                Ok(Some(document)) => report_conflict(context, workspace, bytes, &document.bytes),
+
+                // Refused, and then gone. Nothing truthful can go in a
+                // "server's version" file, so none is written: an empty one
+                // reads as authoritative and invites a merge that deletes.
+                Ok(None) => Err(CliError::usage(
+                    "SYNC_CONFLICT",
+                    "the server refused the write, and now reports no page at all",
+                )
+                .with_repair(
+                    "Nothing here changed. Run `kosong sync --push` to send your page again.",
+                )),
+
+                Err(fetch_error) => {
+                    let repair = fetch_error
+                        .repair
+                        .unwrap_or_else(|| "Try again.".to_owned());
+                    Err(CliError::new(
+                        fetch_error.exit,
+                        "CONFLICT_UNREADABLE",
+                        "the server refused the write, and its version could not be read back",
+                    )
+                    .with_repair(format!("Nothing here changed. {repair}")))
+                }
+            }
         }
         Err(error) => Err(error),
     }
