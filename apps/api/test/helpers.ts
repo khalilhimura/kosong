@@ -1,4 +1,5 @@
 import { env } from "cloudflare:test";
+import type { EmailSender } from "../src/features/auth/email";
 import { RecordingEmailSender } from "../src/features/auth/email";
 import { route } from "../src/index";
 
@@ -39,7 +40,8 @@ export interface RequestOptions {
   body?: unknown;
   headers?: Record<string, string>;
   accessToken?: string;
-  emailSender?: RecordingEmailSender;
+  // Not just the recording one: a test needs to inject senders that fail.
+  emailSender?: EmailSender;
   ip?: string;
 }
 

@@ -9,6 +9,11 @@ import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { MAX_VERIFY_ATTEMPTS } from "../src/shared/config";
 import {
+  EmailProviderUnavailable,
+  EmailRecipientRejected,
+  type EmailSender,
+} from "../src/features/auth/email";
+import {
   bodyWithoutRequestId,
   call,
   clearCooldown,
@@ -17,6 +22,74 @@ import {
   signIn,
   uniqueEmail,
 } from "./helpers";
+
+/**
+ * Senders that fail the two ways a real provider fails.
+ *
+ * The distinction is the whole point of the fix these cover: one is a fact
+ * about the address, the other is a fact about the service.
+ */
+class RejectingSender implements EmailSender {
+  async sendVerificationCode(): Promise<void> {
+    throw new EmailRecipientRejected("the provider refused that address");
+  }
+}
+
+class UnavailableSender implements EmailSender {
+  async sendVerificationCode(): Promise<void> {
+    throw new EmailProviderUnavailable("the provider is down");
+  }
+}
+
+describe("when the email provider will not send", () => {
+  it("still answers a rejected recipient exactly as it answers a good one", async () => {
+    // §8.2: the response must not let a caller tell one address from another.
+    // A provider that refuses `example.com` must not become an oracle for
+    // which addresses are real.
+    const good = await call("/v1/auth/code/request", {
+      method: "POST",
+      body: { email: uniqueEmail() },
+    });
+    const rejected = await call("/v1/auth/code/request", {
+      method: "POST",
+      body: { email: uniqueEmail() },
+      emailSender: new RejectingSender(),
+    });
+
+    expect(rejected.status).toBe(good.status);
+    expect(await bodyWithoutRequestId(rejected)).toEqual(
+      await bodyWithoutRequestId(good),
+    );
+  });
+
+  it("tells the caller to try again when the provider itself is down", async () => {
+    // The opposite case. Answering 202 here would have the user waiting for
+    // an email that was never going to arrive.
+    const response = await call("/v1/auth/code/request", {
+      method: "POST",
+      body: { email: uniqueEmail() },
+      emailSender: new UnavailableSender(),
+    });
+
+    expect(response.status).toBe(503);
+    const body = await response.json<{ code: string; message: string }>();
+    expect(body.code).toBe("EMAIL_UNAVAILABLE");
+    expect(body.message.length).toBeGreaterThan(0);
+  });
+
+  it("never answers 500 for either", async () => {
+    // The bug this replaces: any provider failure surfaced as an unhandled
+    // error, which tells the user nothing and tells an attacker something.
+    for (const sender of [new RejectingSender(), new UnavailableSender()]) {
+      const response = await call("/v1/auth/code/request", {
+        method: "POST",
+        body: { email: uniqueEmail() },
+        emailSender: sender,
+      });
+      expect(response.status).not.toBe(500);
+    }
+  });
+});
 
 describe("requesting a code", () => {
   it("accepts a valid address and sends a six-digit code", async () => {

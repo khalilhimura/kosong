@@ -20,6 +20,28 @@ export interface EmailSender {
   sendVerificationCode(message: VerificationEmail): Promise<void>;
 }
 
+/**
+ * The provider refused this address.
+ *
+ * A fact about the recipient, not about the service: retrying changes
+ * nothing. The caller must still answer as it answers every other code
+ * request, because a different answer here would tell an attacker which
+ * addresses a provider will accept.
+ */
+export class EmailRecipientRejected extends Error {
+  override readonly name = "EmailRecipientRejected";
+}
+
+/**
+ * The provider could not be reached, or failed on its own account.
+ *
+ * A fact about the service. Worth telling the user about, because the code
+ * they are waiting for is never going to arrive.
+ */
+export class EmailProviderUnavailable extends Error {
+  override readonly name = "EmailProviderUnavailable";
+}
+
 /** Resend. */
 export class ResendEmailSender implements EmailSender {
   constructor(
@@ -28,25 +50,45 @@ export class ResendEmailSender implements EmailSender {
   ) {}
 
   async sendVerificationCode({ to, code }: VerificationEmail): Promise<void> {
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${this.apiKey}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        from: this.from,
-        to: [to],
-        subject: `${code} is your kosong sign-in code`,
-        text: bodyText(code),
-      }),
-    });
-
-    if (!response.ok) {
-      // The provider's response body may echo the address, so only the status
-      // is surfaced. The caller turns this into a generic failure.
-      throw new Error(`email provider returned ${response.status}`);
+    let response: Response;
+    try {
+      response = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${this.apiKey}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          from: this.from,
+          to: [to],
+          subject: `${code} is your kosong sign-in code`,
+          text: bodyText(code),
+        }),
+      });
+    } catch {
+      // Never reached the provider at all. The error is not inspected: it can
+      // carry the request, and the request carries the address.
+      throw new EmailProviderUnavailable("could not reach the email provider");
     }
+
+    if (response.ok) {
+      return;
+    }
+
+    // The provider's response body may echo the address, so only the status
+    // is surfaced.
+    //
+    // The split matters. A 4xx is the provider saying something about *this
+    // address* — a domain it will not deliver to, a malformed recipient — and
+    // no amount of retrying will change it. A 5xx or 429 is the provider
+    // having a bad day, which is ours to report and worth trying again.
+    if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+      throw new EmailRecipientRejected(
+        `email provider rejected the recipient (${response.status})`,
+      );
+    }
+
+    throw new EmailProviderUnavailable(`email provider returned ${response.status}`);
   }
 }
 

@@ -21,6 +21,9 @@ export type ErrorCode =
   | "DOCUMENT_TOO_LARGE"
   | "RATE_LIMITED"
   | "INTERNAL_ERROR"
+  // The service is up, but cannot send mail. Distinct from NOT_READY, which
+  // means it was never configured, and from INTERNAL_ERROR, which means a bug.
+  | "EMAIL_UNAVAILABLE"
   | "NOT_READY";
 
 export class ApiError extends Error {

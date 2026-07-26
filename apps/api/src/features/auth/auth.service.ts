@@ -40,7 +40,12 @@ import {
   type Logger,
 } from "../../shared/logging";
 import { AuthRepository } from "./auth.repository";
-import { emailSenderFor, type EmailSender } from "./email";
+import {
+  EmailProviderUnavailable,
+  EmailRecipientRejected,
+  emailSenderFor,
+  type EmailSender,
+} from "./email";
 
 /**
  * Normalizes an email address for storage and comparison.
@@ -119,7 +124,40 @@ export class AuthService {
       ipHash: input.ipHash,
     });
 
-    await this.email.sendVerificationCode({ to: emailNormalized, code });
+    try {
+      await this.email.sendVerificationCode({ to: emailNormalized, code });
+    } catch (error) {
+      if (error instanceof EmailProviderUnavailable) {
+        // Ours to own. Answering "a code is on its way" would leave the user
+        // waiting for something that is never going to arrive.
+        this.logger.error({
+          event: "email_provider_unavailable",
+          outcome: "failure",
+          email_domain: emailDomain(emailNormalized),
+        });
+        throw new ApiError(
+          503,
+          "EMAIL_UNAVAILABLE",
+          "Codes cannot be sent right now. Please try again in a few minutes.",
+        );
+      }
+
+      if (!(error instanceof EmailRecipientRejected)) {
+        throw error;
+      }
+
+      // The provider will not deliver to this address. The caller is told
+      // nothing, deliberately: §8.2 requires one answer for every request, and
+      // a distinct one here would say which addresses a provider accepts.
+      // The code stays stored and simply expires unused.
+      this.logger.warn({
+        event: "code_undeliverable",
+        outcome: "failure",
+        email_domain: emailDomain(emailNormalized),
+        ip_hash: input.ipHash,
+      });
+      return;
+    }
 
     this.logger.info({
       event: "code_requested",

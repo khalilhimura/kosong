@@ -10,7 +10,17 @@ and environment variables — will not change without being named here.
 
 ## Unreleased
 
-Nothing yet.
+### Fixed
+
+- Asking for a code no longer fails with a server error when the email provider
+  refuses the address. The provider returns 422 for domains it will not deliver
+  to, such as `example.com`, and any provider failure became an unhandled 500 —
+  which told the user nothing and, because it differed from the ordinary
+  response, told an attacker which addresses a provider accepts. A refused
+  recipient now gets the same `202` and the same body as everyone else, logged
+  for the operator. A provider that is genuinely down is reported as `503
+  EMAIL_UNAVAILABLE` with guidance to try again, because a code that will never
+  arrive should not look like one that is on its way.
 
 ## [0.1.1] — 2026-07-27
 
