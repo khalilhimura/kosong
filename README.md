@@ -156,4 +156,4 @@ spec/                 format profile, CLI contract, threat model
 Apache-2.0.
 
 [okf]: https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md
-[releases]: https://github.com/mesolitica/kosong/releases
+[releases]: https://github.com/khalilhimura/kosong/releases

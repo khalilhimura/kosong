@@ -11,11 +11,11 @@
 #
 # You are reading this because you were sensible enough to look before piping a
 # script into your shell. To install manually instead, see:
-#   https://github.com/mesolitica/kosong/releases
+#   https://github.com/khalilhimura/kosong/releases
 
 set -eu
 
-REPO="mesolitica/kosong"
+REPO="khalilhimura/kosong"
 # Pinned by the release workflow. A moving "latest" would mean two people
 # running the same command on the same day could get different binaries.
 VERSION="${KOSONG_VERSION:-latest}"
