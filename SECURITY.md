@@ -70,7 +70,7 @@ to spot an attack pattern, not enough to identify a person.
 
 ## Reporting a vulnerability
 
-Email **security@mesolitica.com**. Please include what you did, what happened,
+Email **khalil.himura@gmail.com**. Please include what you did, what happened,
 and what you expected. Expect an acknowledgement within three working days.
 
 Please do not open a public issue for anything exploitable.
