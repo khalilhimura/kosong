@@ -46,3 +46,25 @@ updates:
       prefix: "Bump"
     labels: ["dependencies"]
     open-pull-requests-limit: 5
+
+  # The Worker API. Its dependencies decide what the deployed service runs, so
+  # they are watched; the site template's are deliberately not. That template
+  # ships without a lockfile on purpose — its CI job installs fresh so an
+  # upstream break surfaces here before it reaches a user's site — and pinning
+  # its ranges would defeat the arrangement.
+  - package-ecosystem: npm
+    directory: /apps/api
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      npm-minor:
+        update-types: ["minor", "patch"]
+      # wrangler, vitest, and typescript are all a major apart from breaking
+      # the build in different ways. Each deserves its own diff.
+      npm-major:
+        update-types: ["major"]
+    commit-message:
+      prefix: "Bump"
+    labels: ["dependencies"]
+    open-pull-requests-limit: 5
