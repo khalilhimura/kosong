@@ -108,7 +108,7 @@ hand. kosong tells you which line and rebuilds what it safely can.
 The page was written by a newer kosong than the one you are running.
 
 ```bash
-curl -fsSL https://get.kosong.dev | sh
+curl -fsSL https://kosong.thefutureissolo.com/install.sh | sh
 ```
 
 **Why:** the format is versioned so an older program refuses a newer file rather

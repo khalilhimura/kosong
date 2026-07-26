@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 /// Default API base URL.
-pub const DEFAULT_BASE_URL: &str = "https://api.kosong.dev";
+pub const DEFAULT_BASE_URL: &str = "https://api.kosong.thefutureissolo.com";
 
 /// Per-request timeout. A beginner should not watch a terminal hang.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -86,7 +86,7 @@ impl ApiError {
             // Not "run kosong update": no such command exists, and sending
             // someone to one is how a repair action stops being trusted.
             Self::Malformed => "Install the current version of kosong:\n  \
-                 curl -fsSL https://get.kosong.dev | sh"
+                 curl -fsSL https://kosong.thefutureissolo.com/install.sh | sh"
                 .into(),
         }
     }

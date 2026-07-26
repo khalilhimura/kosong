@@ -8,6 +8,15 @@
     "enabled": true
   },
 
+  // The address the CLI ships pointing at. A workers.dev subdomain would work
+  // but ties the service to one account's naming; this can move.
+  "routes": [
+    {
+      "pattern": "api.kosong.thefutureissolo.com",
+      "custom_domain": true
+    }
+  ],
+
   "vars": {
     "ENVIRONMENT": "production",
     // Sending identity for verification emails. Not a secret.

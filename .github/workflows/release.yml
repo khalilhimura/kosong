@@ -152,4 +152,4 @@ jobs:
             shasum -a 256 -c SHA256SUMS --ignore-missing
             ```
 
-            The installer at https://get.kosong.dev does this for you.
+            The installer at https://kosong.thefutureissolo.com/install.sh does this for you.

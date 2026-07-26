@@ -148,7 +148,7 @@ impl OkfError {
                 // repair that points at something that does not exist is worse
                 // than no repair at all.
                 "This file was made by a newer kosong. Install the current version:\n  \
-                 curl -fsSL https://get.kosong.dev | sh"
+                 curl -fsSL https://kosong.thefutureissolo.com/install.sh | sh"
                     .into()
             }
             Self::KosongMissingField { field } => {

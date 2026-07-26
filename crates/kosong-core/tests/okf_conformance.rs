@@ -446,7 +446,7 @@ kosong:
     // the reader can actually do.
     let repair = err.repair();
     assert!(
-        repair.contains("get.kosong.dev"),
+        repair.contains("kosong.thefutureissolo.com/install.sh"),
         "the repair must point at a real way to get a newer kosong: {repair}"
     );
     assert!(

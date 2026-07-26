@@ -13,7 +13,7 @@ ordinary you own: a Markdown file, a Git repository, and a static website.
 ## Install
 
 ```bash
-curl -fsSL https://get.kosong.dev | sh
+curl -fsSL https://kosong.thefutureissolo.com/install.sh | sh
 ```
 
 Piping a script into your shell deserves suspicion. This one downloads a fixed

@@ -1,9 +1,9 @@
 #!/bin/sh
 # kosong installer.
 #
-# Served from https://get.kosong.dev so that this works:
+# Served from https://kosong.thefutureissolo.com/install.sh so that this works:
 #
-#   curl -fsSL https://get.kosong.dev | sh
+#   curl -fsSL https://kosong.thefutureissolo.com/install.sh | sh
 #
 # §16 permits `curl | sh` only because this script downloads a **fixed,
 # checksum-verified release** rather than executing whatever is newest. If the
