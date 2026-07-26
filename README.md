@@ -71,6 +71,14 @@ see the plan without doing anything.
 `kosong status --json` and `kosong doctor --json` produce stable machine-readable
 output. `--quiet` suppresses prose but never errors. `NO_COLOR` is respected.
 
+## Guides
+
+| Guide | For |
+|---|---|
+| [Troubleshooting](guide/troubleshooting.md) | A command failed and you want the next step |
+| [GitHub and Cloudflare](guide/providers.md) | What kosong asks them to do, and what it refuses to |
+| [Course outline](guide/course-outline.md) | The five modules and what each one leaves you able to do |
+
 ## What you end up owning
 
 | Thing | Where | Works without kosong |
@@ -137,7 +145,7 @@ your deployment history and tells you exactly where to click instead.
 
 ```bash
 cargo build --release      # the CLI
-cargo test --workspace     # 256 tests
+cargo test --workspace     # 257 tests
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
@@ -149,11 +157,12 @@ crates/kosong-cli/    the kosong binary
 apps/api/             Cloudflare Worker: auth and sync
 templates/site/       the bundled Astro template
 spec/                 format profile, CLI contract, threat model
+guide/                troubleshooting, provider boundaries, course outline
 ```
 
 ## Licence
 
-Apache-2.0.
+Apache-2.0. See [LICENSE](LICENSE).
 
 [okf]: https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md
 [releases]: https://github.com/khalilhimura/kosong/releases
