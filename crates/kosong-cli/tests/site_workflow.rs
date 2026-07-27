@@ -8,8 +8,10 @@
 //! that a `--dry-run` invoked *nothing* — the strongest form of that claim is
 //! an empty log.
 
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+use std::time::Duration;
 use tempfile::TempDir;
 
 fn binary() -> PathBuf {
@@ -19,6 +21,93 @@ fn binary() -> PathBuf {
         path.pop();
     }
     path.join("kosong")
+}
+
+// ---------------------------------------------------------------------------
+// Exec'ing a fake this test just wrote
+// ---------------------------------------------------------------------------
+
+/// How many times a fake gets to be busy before we believe it.
+const EXEC_ATTEMPTS: usize = 10;
+
+/// Long enough for a forked child to reach its own exec, short enough that a
+/// genuine failure is still reported promptly.
+const EXEC_RETRY_PAUSE: Duration = Duration::from_millis(20);
+
+/// Runs `attempt`, retrying only while it fails with `ETXTBSY`.
+///
+/// Tests run on parallel threads, and glibc's `posix_spawn` clones a child
+/// with a copy of the descriptor table but not `CLONE_FILES`. A child forked
+/// while `Sandbox::fake` still holds a fake open for writing keeps that
+/// descriptor until its own exec clears it, and exec'ing a file another
+/// process holds open for writing is `ETXTBSY`.
+///
+/// The condition is transient by construction: it lasts until that child
+/// execs. Retries that run out return the original error rather than
+/// swallowing it, and any other failure is returned on the first attempt.
+fn with_busy_retry<T>(mut attempt: impl FnMut() -> std::io::Result<T>) -> std::io::Result<T> {
+    let mut outcome = attempt();
+
+    for _ in 1..EXEC_ATTEMPTS {
+        match &outcome {
+            Err(error) if error.kind() == ErrorKind::ExecutableFileBusy => {}
+            _ => break,
+        }
+        std::thread::sleep(EXEC_RETRY_PAUSE);
+        outcome = attempt();
+    }
+
+    outcome
+}
+
+#[test]
+fn a_busy_fake_is_waited_out_rather_than_reported() {
+    // The race cannot be provoked on demand, so the policy is pinned directly.
+    let mut attempts = 0;
+
+    let outcome = with_busy_retry(|| {
+        attempts += 1;
+        if attempts < 3 {
+            Err(std::io::Error::from(ErrorKind::ExecutableFileBusy))
+        } else {
+            Ok(())
+        }
+    });
+
+    assert!(outcome.is_ok(), "must succeed once the fake is free");
+    assert_eq!(attempts, 3);
+}
+
+#[test]
+fn a_fake_that_stays_busy_is_reported_in_the_end() {
+    // Retrying must not turn a real, persistent failure into silence.
+    let mut attempts = 0;
+
+    let outcome: std::io::Result<()> = with_busy_retry(|| {
+        attempts += 1;
+        Err(std::io::Error::from(ErrorKind::ExecutableFileBusy))
+    });
+
+    assert_eq!(
+        outcome.unwrap_err().kind(),
+        ErrorKind::ExecutableFileBusy,
+        "the original error must survive"
+    );
+    assert_eq!(attempts, EXEC_ATTEMPTS);
+}
+
+#[test]
+fn a_fake_that_fails_for_another_reason_is_reported_at_once() {
+    // A fake that is missing is not a race, and waiting to say so helps nobody.
+    let mut attempts = 0;
+
+    let outcome: std::io::Result<()> = with_busy_retry(|| {
+        attempts += 1;
+        Err(std::io::Error::from(ErrorKind::NotFound))
+    });
+
+    assert_eq!(outcome.unwrap_err().kind(), ErrorKind::NotFound);
+    assert_eq!(attempts, 1);
 }
 
 /// A workspace plus a directory of fake provider tools.
@@ -68,6 +157,49 @@ impl Sandbox {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
                 .expect("chmod fake");
+        }
+
+        #[cfg(target_os = "linux")]
+        self.wait_until_runnable(&path);
+    }
+
+    /// Runs a fake once, here, before kosong is ever asked to.
+    ///
+    /// Unlike the core process tests, nothing in this file execs a fake
+    /// directly — kosong does, from a child process, so an `ETXTBSY` would
+    /// surface as an unrecognisable kosong failure with no way to tell it from
+    /// a real one. Running the fake once here gives that error somewhere to be
+    /// caught, and settles the question for good: once a fake has run, no
+    /// process holds it open for writing, and nothing writes it again.
+    ///
+    /// Linux only, because that is where the window exists. macOS `posix_spawn`
+    /// is a single kernel syscall with no forked child to inherit a descriptor,
+    /// and 2400 write-then-exec races there produced no `ETXTBSY` at all. It
+    /// would not be a free precaution either: the first exec of a newly written
+    /// file on macOS costs ~150ms of Gatekeeper assessment, which across every
+    /// fake of every sandbox added 14s to this binary.
+    #[cfg(target_os = "linux")]
+    fn wait_until_runnable(&self, path: &Path) {
+        // The probe is an invocation like any other, so the fake logs it. No
+        // test asked for that line, so the log is wound back afterwards.
+        let logged = std::fs::metadata(&self.log).map(|m| m.len()).unwrap_or(0);
+
+        let outcome = with_busy_retry(|| {
+            Command::new(path)
+                .current_dir(&self.root)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .map(|_| ())
+        });
+
+        if let Err(error) = outcome {
+            panic!("the fake `{}` cannot be run: {error}", path.display());
+        }
+
+        if let Ok(file) = std::fs::OpenOptions::new().write(true).open(&self.log) {
+            file.set_len(logged).expect("wind the log back");
         }
     }
 
