@@ -11,6 +11,7 @@ import { MAX_VERIFY_ATTEMPTS } from "../src/shared/config";
 import {
   EmailProviderUnavailable,
   EmailRecipientRejected,
+  RecordingEmailSender,
   type EmailSender,
 } from "../src/features/auth/email";
 import {
@@ -46,9 +47,14 @@ describe("when the email provider will not send", () => {
     // §8.2: the response must not let a caller tell one address from another.
     // A provider that refuses `example.com` must not become an oracle for
     // which addresses are real.
+    // The comparison case must be a genuine successful send. Left to the
+    // environment it would pick whatever sender the config implies, which in
+    // a production-shaped test env is one that refuses — so the two sides
+    // would differ for a reason that has nothing to do with the recipient.
     const good = await call("/v1/auth/code/request", {
       method: "POST",
       body: { email: uniqueEmail() },
+      emailSender: new RecordingEmailSender(),
     });
     const rejected = await call("/v1/auth/code/request", {
       method: "POST",

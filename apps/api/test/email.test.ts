@@ -122,10 +122,22 @@ describe("choosing a sender", () => {
     expect(emailSenderFor(env)).toBeInstanceOf(ResendEmailSender);
   });
 
-  it("falls back to the console when none is", () => {
-    // Local development only. The fallback writes the code to the log, which
-    // is why the deployed service must never reach it.
-    const env = { EMAIL_FROM: "a@b.c" } as unknown as Env;
+  it("falls back to the console in development", () => {
+    // The fallback writes the code to the log, which is only acceptable on a
+    // machine where the log and the mailbox belong to the same person.
+    const env = { EMAIL_FROM: "a@b.c", ENVIRONMENT: "development" } as unknown as Env;
     expect(emailSenderFor(env)).toBeInstanceOf(ConsoleEmailSender);
+  });
+
+  it("refuses to send rather than log codes in production", async () => {
+    // This happened: a deployed service ran for about an hour with no key,
+    // writing live sign-in codes into its own log because nothing stopped it.
+    const env = { EMAIL_FROM: "a@b.c", ENVIRONMENT: "production" } as unknown as Env;
+    const sender = emailSenderFor(env);
+
+    expect(sender).not.toBeInstanceOf(ConsoleEmailSender);
+    await expect(sender.sendVerificationCode(MESSAGE)).rejects.toBeInstanceOf(
+      EmailProviderUnavailable,
+    );
   });
 });

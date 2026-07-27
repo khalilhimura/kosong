@@ -117,6 +117,32 @@ export class ConsoleEmailSender implements EmailSender {
   }
 }
 
+/**
+ * Refuses to send, loudly.
+ *
+ * Selected when a deployed service has no email provider configured — the one
+ * situation {@link ConsoleEmailSender} must never be reached in, since it
+ * writes verification codes into the log. That happened once, for about an
+ * hour, because nothing enforced the difference between "not configured yet"
+ * and "not configured, in production".
+ *
+ * Failing every sign-in is the right outcome: the alternative is a service
+ * that appears to work while quietly publishing the credentials it issues.
+ */
+export class MisconfiguredEmailSender implements EmailSender {
+  async sendVerificationCode(): Promise<void> {
+    console.log(
+      JSON.stringify({
+        level: "error",
+        event: "email_not_configured",
+        detail:
+          "RESEND_API_KEY is unset in a production deployment; no code was sent, and none will be",
+      }),
+    );
+    throw new EmailProviderUnavailable("no email provider is configured");
+  }
+}
+
 /** Captures messages in memory. Tests only. */
 export class RecordingEmailSender implements EmailSender {
   readonly sent: VerificationEmail[] = [];
@@ -137,10 +163,20 @@ function bodyText(code: string): string {
   ].join("\n");
 }
 
-/** Picks a sender for the environment. */
+/**
+ * Picks a sender for the environment.
+ *
+ * The production branch is the load-bearing one. Logging codes is a
+ * development convenience, and a convenience that follows an unconfigured key
+ * into production is a way of handing out sign-in codes to anyone who can read
+ * a log. A deployed service without a provider fails instead, and says why.
+ */
 export function emailSenderFor(env: Env): EmailSender {
   if (env.RESEND_API_KEY) {
     return new ResendEmailSender(env.RESEND_API_KEY, env.EMAIL_FROM);
+  }
+  if (env.ENVIRONMENT === "production") {
+    return new MisconfiguredEmailSender();
   }
   return new ConsoleEmailSender();
 }

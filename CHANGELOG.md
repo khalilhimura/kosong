@@ -10,7 +10,14 @@ and environment variables — will not change without being named here.
 
 ## Unreleased
 
-Nothing yet.
+### Fixed
+
+- A deployed service with no email provider configured now refuses to send,
+  rather than falling back to writing verification codes into its own log. That
+  fallback exists for local development, where the log and the mailbox belong
+  to the same person; following an unset key into production made live sign-in
+  codes readable by anyone with access to the logs. Sign-in fails with `503
+  EMAIL_UNAVAILABLE` and the misconfiguration is logged once, loudly.
 
 ## [0.1.2] — 2026-07-27
 

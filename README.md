@@ -145,7 +145,7 @@ your deployment history and tells you exactly where to click instead.
 
 ```bash
 cargo build --release      # the CLI
-cargo test --workspace     # 257 tests
+cargo test --workspace     # 259 tests
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 

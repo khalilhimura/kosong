@@ -32,7 +32,12 @@
       "database_name": "kosong",
       // The real database on the Himura account. Not a secret — reaching it
       // still requires Cloudflare credentials, which kosong never holds.
-      // Local development and tests use a miniflare database, not this id.
+      //
+      // Changing this id also re-keys the *local* miniflare database, which
+      // then starts empty and unmigrated. `wrangler dev` will look healthy —
+      // /ready only runs `SELECT 1`, which an empty database answers fine —
+      // while every insert fails and every route 500s. Run
+      // `npm run migrate:local` after touching this line.
       "database_id": "58869958-b5ba-4bc3-aa19-3c53ab2437f1",
       "migrations_dir": "migrations"
     }
