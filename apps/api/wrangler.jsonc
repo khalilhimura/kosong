@@ -8,6 +8,12 @@
     "enabled": true
   },
 
+  // The retention sweep. Daily, off-peak for the accounts this serves.
+  // Nothing else runs on a schedule; see src/features/retention/retention.ts.
+  "triggers": {
+    "crons": ["0 3 * * *"]
+  },
+
   // The address the CLI ships pointing at. A workers.dev subdomain would work
   // but ties the service to one account's naming; this can move.
   "routes": [

@@ -73,6 +73,9 @@ install ping, no version check. [`spec/telemetry-v1.md`](spec/telemetry-v1.md)
 states exactly what is and is not recorded, including the parts that are not
 tidy.
 
+What is recorded does not accumulate forever. Security events are kept **90
+days** and verification-code records **24 hours**; a daily job deletes the rest.
+
 ## Reporting a vulnerability
 
 Email **khalil.himura@gmail.com**. Please include what you did, what happened,

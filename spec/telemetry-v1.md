@@ -95,20 +95,40 @@ Cloudflare, as operator of the edge, sees request metadata independently of any
 of this. That is the provider boundary `SECURITY.md` already describes, and no
 logging choice here changes it.
 
-### Two things this does not yet do
+### How long any of it is kept
 
-Stated because a policy that omits its own gaps is worth less than one that
-names them:
+| Data | Kept for |
+|---|---|
+| Security events | **90 days** |
+| Verification code rows | **24 hours** |
+| Structured logs | Whatever Cloudflare's Workers Logs retains; not ours to set |
 
-1. **`security_events` rows survive account deletion.** Deleting an account
-   removes the sessions, the document, the user row, and any outstanding
-   verification codes. The audit rows remain, holding an opaque user id whose
-   mapping to an email is gone with the user row — so they are de-identified
-   rather than deleted. That is a deliberate trade for an audit trail that
-   cannot be erased by the account under investigation, and anyone who expects
-   deletion to mean *every* row should know it.
-2. **No retention window is implemented.** Security events accumulate. A
-   documented expiry belongs here before public beta.
+A cron trigger sweeps both tables daily at 03:00 UTC, in bounded batches so a
+long-neglected table cannot stall the run. Nothing else in this service runs on
+a schedule.
+
+Ninety days is long enough to recognise a slow pattern — credential stuffing
+spread thin enough to stay under the rate limits — and short enough that the log
+is not a permanent record of who signed in from where.
+
+Twenty-four hours for verification codes is set by a constraint rather than
+taste. The per-email and per-IP rate limits are enforced by **counting rows
+inside a one-hour window**, so a retention window shorter than that would not
+fail loudly; it would quietly stop the limiter from counting while codes still
+sent and sign-in still worked. A day is twenty-four times the window, and it
+clears the plaintext address of anyone who asked for a code and never came back.
+Two tests guard that ordering, and both fail if the window drops below the
+limit's.
+
+### One thing this does not do
+
+**`security_events` rows survive account deletion.** Deleting an account removes
+the sessions, the document, the user row, and any outstanding verification
+codes. The audit rows remain, holding an opaque user id whose mapping to an
+email is gone with the user row — so they are de-identified rather than deleted,
+and they age out on the 90-day window like any other. That is a deliberate
+trade: an audit trail that the account under investigation can erase is not one.
+Anyone who expects deletion to mean *every* row should know it.
 
 ## 5. If this ever changes
 

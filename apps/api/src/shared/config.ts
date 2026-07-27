@@ -49,6 +49,29 @@ export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 export const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 /**
+ * How long an auditable security event is kept.
+ *
+ * Ninety days is long enough to recognise a slow pattern — credential
+ * stuffing spread thin to stay under the rate limits — and short enough that
+ * the log is not an indefinite record of who signed in from where.
+ */
+export const SECURITY_EVENT_RETENTION_SECONDS = 90 * 24 * 60 * 60;
+
+/**
+ * How long a verification code row is kept after it is created.
+ *
+ * **Must stay well above {@link RATE_LIMIT_WINDOW_SECONDS}.** The per-email
+ * and per-IP limits are enforced by counting rows created inside that window,
+ * so deleting them sooner would not fail loudly — it would quietly stop the
+ * limiter from counting, leaving the endpoint open while every test about
+ * expiry still passed.
+ *
+ * A day is twenty-four times the window, and clears the plaintext address of
+ * anyone who asked for a code and never came back.
+ */
+export const VERIFICATION_CODE_RETENTION_SECONDS = 24 * 60 * 60;
+
+/**
  * Largest document accepted, in bytes.
  *
  * Must match `kosong_core::workspace::MAX_DOCUMENT_BYTES`. §9.4 requires the

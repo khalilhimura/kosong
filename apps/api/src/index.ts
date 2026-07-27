@@ -20,6 +20,7 @@ import {
   handleGetDocument,
   handlePutDocument,
 } from "./features/documents/document.routes";
+import { sweep } from "./features/retention/retention";
 import { requireSecrets, type Env } from "./shared/config";
 import { ApiError, errorResponse, jsonResponse } from "./shared/errors";
 import { Logger } from "./shared/logging";
@@ -168,5 +169,16 @@ function withSecurityHeaders(response: Response, requestId: string): Response {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     return route(request, env);
+  },
+
+  /**
+   * The retention sweep, from the cron trigger in `wrangler.jsonc`.
+   *
+   * Awaited rather than handed to `waitUntil`: there is no response to return
+   * early for, and a scheduled invocation that ends before its work does is
+   * one that silently deletes nothing.
+   */
+  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
+    await sweep(env, Logger.forRequest());
   },
 } satisfies ExportedHandler<Env>;

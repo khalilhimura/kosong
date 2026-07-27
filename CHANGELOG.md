@@ -10,6 +10,16 @@ and environment variables — will not change without being named here.
 
 ## Unreleased
 
+### Added
+
+- The service now deletes what it no longer needs. Security events are kept 90
+  days and verification-code records 24 hours; a daily job removes the rest.
+  Both tables previously grew without limit, which meant the record of a
+  sign-in attempt outlived any use for it — and, for codes, that the plaintext
+  address of anyone who asked for a code and never came back was kept
+  indefinitely. [`spec/telemetry-v1.md`](spec/telemetry-v1.md) states the
+  windows and why each is the length it is. Nothing you can see changes.
+
 ### Fixed
 
 - A deployed service with no email provider configured now refuses to send,
