@@ -525,7 +525,7 @@ impl Document {
         let title = self.title_or_filename(filename);
         let meta = KosongMeta {
             profile: KOSONG_PROFILE,
-            id: ulid::Ulid::new().to_string(),
+            id: ulid::Ulid::generate().to_string(),
             slug: slugify(&title),
             visibility: Visibility::Private,
             created_at: now.clone(),
@@ -567,7 +567,7 @@ impl Document {
         };
         doc.set_kosong(&KosongMeta {
             profile: KOSONG_PROFILE,
-            id: ulid::Ulid::new().to_string(),
+            id: ulid::Ulid::generate().to_string(),
             slug,
             visibility: Visibility::Private,
             created_at: now,

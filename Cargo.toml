@@ -13,7 +13,7 @@ repository = "https://github.com/khalilhimura/kosong"
 serde = { version = "1", features = ["derive"] }
 serde_yaml_ng = "0.10"
 serde_json = "1"
-toml = "0.9"
+toml = "1.1"
 thiserror = "2"
 camino = { version = "1", features = ["serde1"] }
 clap = { version = "4", features = ["derive"] }
@@ -35,7 +35,7 @@ tokio = { version = "1", features = ["rt", "macros", "time", "process"] }
 base64 = "0.23"
 sha2 = "0.11"
 time = { version = "0.3", features = ["formatting", "parsing", "macros", "local-offset"] }
-ulid = "1"
+ulid = "3"
 
 [profile.release]
 lto = "thin"
