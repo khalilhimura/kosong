@@ -10,6 +10,13 @@ and environment variables — will not change without being named here.
 
 ## Unreleased
 
+Nothing yet.
+
+## [0.1.2] — 2026-07-27
+
+A failing sign-in now tells you something you can act on. Nothing about the
+local half of kosong changes.
+
 ### Fixed
 
 - Asking for a code no longer fails with a server error when the email provider
@@ -106,5 +113,6 @@ archive until it does.
 - [`guide/course-outline.md`](guide/course-outline.md) — the five course
   modules mapped to real commands and the artefacts they produce.
 
+[0.1.2]: https://github.com/khalilhimura/kosong/releases/tag/v0.1.2
 [0.1.1]: https://github.com/khalilhimura/kosong/releases/tag/v0.1.1
 [0.1.0]: https://github.com/khalilhimura/kosong/releases/tag/v0.1.0
