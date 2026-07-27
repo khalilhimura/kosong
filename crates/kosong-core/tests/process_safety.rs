@@ -67,13 +67,117 @@ impl FakeBins {
     }
 }
 
-/// Runs a command on a temporary tokio runtime.
-fn run(command: SafeCommand) -> Result<kosong_core::process::ProcessResult, ProcessError> {
+// ---------------------------------------------------------------------------
+// Exec'ing a file this test just wrote
+// ---------------------------------------------------------------------------
+
+/// How many times a spawn gets to hit a busy executable before we believe it.
+const SPAWN_ATTEMPTS: usize = 10;
+
+/// Long enough for a forked child to reach its own exec, short enough that a
+/// genuine failure is still reported promptly.
+const SPAWN_RETRY_PAUSE: Duration = Duration::from_millis(20);
+
+/// Runs `attempt`, retrying only while it fails with `ETXTBSY`.
+///
+/// Writing an executable and exec'ing it immediately races with every other
+/// test in this binary, because the harness runs tests on parallel threads.
+/// On Linux `posix_spawn` clones a child that gets a *copy* of the descriptor
+/// table, so a child forked while `FakeBins::write` still holds the file open
+/// for writing keeps that descriptor until its own exec clears it — and
+/// exec'ing a file some process holds open for writing is `ETXTBSY`.
+///
+/// The condition is transient by construction: it lasts only until that child
+/// execs. So it is the harness's problem, not `kosong_core::process`'s, which
+/// must go on reporting a spawn failure faithfully. Retries that run out
+/// return the original error rather than swallowing it, and any other failure
+/// is returned on the first attempt so that a real bug still surfaces at once.
+fn with_spawn_retry<T>(
+    mut attempt: impl FnMut() -> Result<T, ProcessError>,
+) -> Result<T, ProcessError> {
+    let mut outcome = attempt();
+
+    for _ in 1..SPAWN_ATTEMPTS {
+        match &outcome {
+            Err(ProcessError::Spawn { source, .. })
+                if source.kind() == std::io::ErrorKind::ExecutableFileBusy => {}
+            _ => break,
+        }
+        std::thread::sleep(SPAWN_RETRY_PAUSE);
+        outcome = attempt();
+    }
+
+    outcome
+}
+
+/// Drives a future to completion on a temporary tokio runtime.
+fn block_on<F: std::future::Future>(future: F) -> F::Output {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .expect("runtime")
-        .block_on(command.run())
+        .block_on(future)
+}
+
+/// Runs a command on a temporary tokio runtime.
+fn run(command: SafeCommand) -> Result<kosong_core::process::ProcessResult, ProcessError> {
+    with_spawn_retry(|| block_on(command.run()))
+}
+
+/// A spawn that failed because the executable was open for writing.
+fn busy_executable() -> ProcessError {
+    ProcessError::Spawn {
+        program: "fake".into(),
+        source: std::io::Error::from(std::io::ErrorKind::ExecutableFileBusy),
+    }
+}
+
+#[test]
+fn a_busy_executable_is_waited_out_rather_than_reported() {
+    // The race cannot be provoked on demand, so the policy is pinned directly.
+    let mut attempts = 0;
+
+    let outcome = with_spawn_retry(|| {
+        attempts += 1;
+        if attempts < 3 {
+            Err(busy_executable())
+        } else {
+            Ok("ran")
+        }
+    });
+
+    assert_eq!(outcome.expect("must succeed once the file is free"), "ran");
+    assert_eq!(attempts, 3);
+}
+
+#[test]
+fn an_executable_that_stays_busy_is_reported_in_the_end() {
+    // Retrying must not turn a real, persistent failure into silence.
+    let mut attempts = 0;
+
+    let outcome: Result<(), ProcessError> = with_spawn_retry(|| {
+        attempts += 1;
+        Err(busy_executable())
+    });
+
+    assert!(matches!(outcome, Err(ProcessError::Spawn { .. })));
+    assert_eq!(attempts, SPAWN_ATTEMPTS);
+}
+
+#[test]
+fn any_other_spawn_failure_is_reported_at_once() {
+    // A missing tool is not a race, and waiting 200ms to say so helps nobody.
+    let mut attempts = 0;
+
+    let outcome: Result<(), ProcessError> = with_spawn_retry(|| {
+        attempts += 1;
+        Err(ProcessError::NotFound {
+            program: "nope".into(),
+        })
+    });
+
+    assert!(matches!(outcome, Err(ProcessError::NotFound { .. })));
+    assert_eq!(attempts, 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -200,12 +304,7 @@ fn run_checked_turns_a_failure_into_an_error_with_the_output() {
     let failing = bins.write("failing", "#!/bin/sh\necho 'the reason' >&2\nexit 1\n");
 
     let command = SafeCommand::new(failing.as_str(), bins.path());
-    let error = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(command.run_checked())
-        .expect_err("must fail");
+    let error = with_spawn_retry(|| block_on(command.run_checked())).expect_err("must fail");
 
     assert!(matches!(error, ProcessError::Failed { .. }));
     // The repair surfaces the tool's own explanation rather than hiding it.
