@@ -25,6 +25,9 @@ pub fn map_api_error(error: ApiError) -> CliError {
         ApiError::NotFound => (Exit::Usage, "NO_REMOTE_DOCUMENT"),
         ApiError::Conflict(_) => (Exit::Usage, "DOCUMENT_CONFLICT"),
         ApiError::RateLimited { .. } => (Exit::Network, "RATE_LIMITED"),
+        // A service problem, not the user's — same exit code as a network
+        // failure, because from where they are standing it is one.
+        ApiError::Unavailable { .. } => (Exit::Network, "SERVICE_UNAVAILABLE"),
         ApiError::Rejected { .. } => (Exit::Usage, "REJECTED"),
         ApiError::Malformed => (Exit::Network, "MALFORMED_RESPONSE"),
     };

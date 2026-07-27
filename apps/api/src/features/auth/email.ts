@@ -78,11 +78,14 @@ export class ResendEmailSender implements EmailSender {
     // The provider's response body may echo the address, so only the status
     // is surfaced.
     //
-    // The split matters. A 4xx is the provider saying something about *this
-    // address* — a domain it will not deliver to, a malformed recipient — and
-    // no amount of retrying will change it. A 5xx or 429 is the provider
-    // having a bad day, which is ours to report and worth trying again.
-    if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+    // Only these two are statements about the recipient: a malformed address,
+    // or a domain the provider will not deliver to. Everything else — an
+    // expired key, an unpaid account, a rate limit, a fault at their end — is
+    // a statement about *us*, and must not be quietly absorbed as though a
+    // user had mistyped their address. A revoked API key that read as "bad
+    // recipient" would answer every sign-in with "a code is on its way" while
+    // sending nothing, and nothing would say otherwise.
+    if (response.status === 400 || response.status === 422) {
       throw new EmailRecipientRejected(
         `email provider rejected the recipient (${response.status})`,
       );

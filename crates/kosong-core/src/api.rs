@@ -51,6 +51,14 @@ pub enum ApiError {
     #[error("{message}")]
     Rejected { code: String, message: String },
 
+    /// The service is running but cannot do this right now, and said why.
+    ///
+    /// Distinct from [`Server`](Self::Server): that is a fault the user can do
+    /// nothing about except report, whereas this carries a sentence written
+    /// for them — the email provider being unreachable is the case in hand.
+    #[error("{message}")]
+    Unavailable { message: String },
+
     #[error("the service had a problem (request {request_id})")]
     Server { request_id: String },
 
@@ -80,6 +88,10 @@ impl ApiError {
                 format!("Wait {retry_after_seconds} seconds, then try again.")
             }
             Self::Rejected { .. } => "Fix the problem above, then try again.".into(),
+            Self::Unavailable { .. } => {
+                "Try again in a few minutes. Everything local still works without the service."
+                    .into()
+            }
             Self::Server { request_id } => {
                 format!("This is a problem on our side. If you report it, quote: {request_id}")
             }
@@ -409,6 +421,10 @@ async fn check_status(response: reqwest::Response) -> Result<reqwest::Response, 
             retry_after_seconds: retry_after.unwrap_or(60),
         },
         400 | 413 => ApiError::Rejected { code, message },
+        // A service that explained itself is repeating that explanation. This
+        // is where "codes cannot be sent right now" and "this service is not
+        // ready yet" arrive, and both are worth more than a request id.
+        503 if !message.is_empty() => ApiError::Unavailable { message },
         500..=599 => ApiError::Server { request_id },
         _ => ApiError::Rejected { code, message },
     })

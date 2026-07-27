@@ -77,6 +77,25 @@ describe("when the email provider will not send", () => {
     expect(body.message.length).toBeGreaterThan(0);
   });
 
+  it("treats a broken API key as the service's fault, not the address's", async () => {
+    // A revoked or wrong key comes back 401. Classified as a bad recipient it
+    // would answer "a code is on its way" for every request while sending
+    // nothing at all, and no one would find out until users complained.
+    const sender = new (class implements EmailSender {
+      async sendVerificationCode(): Promise<void> {
+        throw new EmailProviderUnavailable("email provider returned 401");
+      }
+    })();
+
+    const response = await call("/v1/auth/code/request", {
+      method: "POST",
+      body: { email: uniqueEmail() },
+      emailSender: sender,
+    });
+
+    expect(response.status).toBe(503);
+  });
+
   it("never answers 500 for either", async () => {
     // The bug this replaces: any provider failure surfaced as an unhandled
     // error, which tells the user nothing and tells an attacker something.

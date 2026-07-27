@@ -21,6 +21,14 @@ and environment variables — will not change without being named here.
   for the operator. A provider that is genuinely down is reported as `503
   EMAIL_UNAVAILABLE` with guidance to try again, because a code that will never
   arrive should not look like one that is on its way.
+- Only a malformed address or a refused domain counts as the recipient's fault.
+  An expired API key, an unpaid account, or a rate limit at the provider is the
+  service's, and is reported as such. Classified the other way, a revoked key
+  would have answered every sign-in with "a code is on its way" while sending
+  nothing at all.
+- `kosong` shows what the service said when the service explained itself. A
+  `503` carrying a message now surfaces that message; previously any 5xx became
+  "the service had a problem" plus a request id, which is not a next action.
 
 ## [0.1.1] — 2026-07-27
 
