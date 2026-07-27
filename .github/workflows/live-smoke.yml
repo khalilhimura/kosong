@@ -77,7 +77,11 @@ jobs:
           WORK="$(mktemp -d)"
           NAME="kosong-smoke-${GITHUB_RUN_ID}"
           export KOSONG_CONFIG_DIR="$WORK/config" KOSONG_SESSION_FILE="$WORK/session" NO_COLOR=1
+
+          # Both are read by later steps. Each step is its own shell, so
+          # anything the next one needs has to be written down here.
           echo "SMOKE_NAME=$NAME" >> "$GITHUB_ENV"
+          echo "SMOKE_WORK=$WORK" >> "$GITHUB_ENV"
 
           git config --global user.name "kosong smoke"
           git config --global user.email "smoke@example.invalid"
@@ -106,7 +110,9 @@ jobs:
         run: |
           set -euo pipefail
           BIN="$PWD/target/release/kosong"
-          WORK="$(find /tmp -maxdepth 1 -name 'tmp*' -newer Cargo.toml | head -1)"
+          # The directory the previous step created, not whichever /tmp entry
+          # happens to look newest. `set -u` fails here if it was never written.
+          WORK="$SMOKE_WORK"
           export KOSONG_CONFIG_DIR="$WORK/config" KOSONG_SESSION_FILE="$WORK/session" NO_COLOR=1
           URL="$(cat "$WORK/url")"
 
