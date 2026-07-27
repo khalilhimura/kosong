@@ -52,6 +52,38 @@ function quote(value) {
   return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
+/**
+ * The README's command table.
+ *
+ * The front page shows a curated subset of these rows, in its own order — but
+ * the wording of each is the README's, read at build time. It was hand-copied
+ * once, and drifted the first time a lesson was reworded: the README learned
+ * that `site rollback` teaches an honest limit while the site still said
+ * something vaguer, and nothing caught it.
+ */
+function commandsFrom(markdown) {
+  const section = markdown.match(/^## Commands\s*$([\s\S]*?)^## /m);
+  if (!section) throw new Error("README has no '## Commands' section");
+
+  const rows = [];
+  for (const line of section[1].split("\n")) {
+    const match = line.match(/^\|(.+)\|(.+)\|(.+)\|\s*$/);
+    if (!match) continue;
+    const cells = match.slice(1, 4).map((cell) => cell.trim());
+    // The header and the `|---|` rule beneath it.
+    if (cells[0] === "Command") continue;
+    if (cells.every((cell) => /^:?-+:?$/.test(cell))) continue;
+    rows.push({
+      name: cells[0].replace(/`/g, ""),
+      does: cells[1],
+      teaches: cells[2],
+    });
+  }
+
+  if (!rows.length) throw new Error("README's command table parsed to nothing");
+  return rows;
+}
+
 await rm(outDir, { recursive: true, force: true });
 await mkdir(outDir, { recursive: true });
 await mkdir(publicDir, { recursive: true });
@@ -87,4 +119,13 @@ await writeFile(
   "utf8",
 );
 
-console.log(`collected ${collected.length} guides and install.sh`);
+const commands = commandsFrom(await readFile(join(repo, "README.md"), "utf8"));
+await writeFile(
+  join(here, "../src/commands.json"),
+  JSON.stringify(commands, null, 2),
+  "utf8",
+);
+
+console.log(
+  `collected ${collected.length} guides, ${commands.length} commands, and install.sh`,
+);
