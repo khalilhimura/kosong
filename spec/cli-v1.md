@@ -1,7 +1,7 @@
 # kosong CLI Contract v1
 
 **Status:** Normative for `kosong` v1
-**Last updated:** 2026-07-26
+**Last updated:** 2026-07-27
 
 What scripts and other tools may rely on. Anything here changes only with a
 version bump; anything not here may change without notice.
@@ -131,7 +131,29 @@ see the plan.
 `--dry-run` **never invokes a mutating tool.** Read-only checks may still run;
 they are how the plan is built.
 
-## 8. Stability
+## 8. Limits
+
+| Limit | Value |
+|---|---|
+| Document size | **1 MiB** — 1,048,576 bytes |
+
+Contractual, because two independent implementations share it and a third
+argument depends on it.
+
+The CLI refuses an oversized document *before* the network, with
+`DOCUMENT_TOO_LARGE` and exit `2` — a local precondition, per §1. The service
+enforces the same number independently and answers `413 DOCUMENT_TOO_LARGE`, on
+the principle that a client-side check is a courtesy and never a control.
+
+Stating the number here matters more than it looks. The limit is enforced in
+Rust and in TypeScript, and `spec/threat-model-v1.md` reasons about what it does
+*not* protect against — a YAML alias bomb expands after the bytes are counted,
+so the cap alone does not help. Three places depending on a constant that none
+of them defines is how the two enforcement points quietly drift apart.
+
+Size is measured in bytes of the document as stored, not characters.
+
+## 9. Stability
 
 **Stable:** exit codes; `--json` shapes at their schema version; the flags
 above; the environment variables above; stream discipline.

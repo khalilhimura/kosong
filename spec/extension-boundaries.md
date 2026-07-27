@@ -1,7 +1,7 @@
 # Extension Boundaries v1
 
 **Status:** Normative for `kosong` v1
-**Last updated:** 2026-07-26
+**Last updated:** 2026-07-27
 
 §17 defines interfaces that exist so v1 does not paint itself into a corner —
 not so v1 can grow into a platform. This records what may be extended, what may
@@ -72,7 +72,18 @@ Not until authorization scopes, read/write separation, audit events,
 cross-harness integration tests, and a separate architecture decision all exist.
 
 The first step, if earned, is **read-only**: `status --json`, `show --json`, and
-a documented file layout. `status --json` is already stable for this reason.
+a documented file layout.
+
+Of those three, one exists. `status --json` is stable and specified
+(`spec/cli-v1.md` §5), and the file layout is documented. **`show --json` is not
+built** — `show` offers `--raw`, which prints the file, front matter included.
+Listing it above describes the step, not the present tense.
+
+If it is built, it is a `--json` shape at a schema version like any other, and
+it belongs in `spec/cli-v1.md` before it ships rather than after. The reason to
+be exact about this is that the read-only step is the one boundary here anyone
+is likely to cross, and a half-promised surface is how a harness ends up
+parsing prose instead.
 
 **Revisit when:** there is demonstrated demand, not anticipated demand.
 

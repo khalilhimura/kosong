@@ -2,7 +2,7 @@
 
 **Status:** Normative for `kosong` v1
 **Profiles:** [Open Knowledge Format v0.1](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)
-**Last updated:** 2026-07-26
+**Last updated:** 2026-07-27
 
 ---
 
@@ -205,7 +205,15 @@ The body is captured as the exact byte range following the closing delimiter and
 
 ## 6. OKF v0.2 and the migration path
 
-Upstream published v0.2 on 2026-07-24, two days before this document. `kosong` v1 targets v0.1 deliberately: v0.2 is days old, and its new families are not needed by a single-page publishing tool.
+Upstream published v0.2 on 2026-07-24. `kosong` v1 targets v0.1 deliberately: at the time this profile was written v0.2 was two days old, and its new families are not needed by a single-page publishing tool.
+
+**Revisit when** any of these is true, whichever comes first:
+
+- **2026-10-24** — v0.2 plus ninety days. "Days old" is the whole argument above, and it stops being true on its own without anyone deciding anything. This date exists so the decision gets made rather than inherited.
+- The upstream sample bundles in `GoogleCloudPlatform/knowledge-catalog` move to v0.2. §7 tests `kosong` against them, so this is the point where staying on v0.1 costs something concrete.
+- A user brings a v0.2 document that `kosong` handles worse than it should.
+
+Re-reading this section at that point is cheap: the migration below is already written, and §4.2's unknown-key rule means v1 documents keep working either way. What must not happen is v0.1 becoming the target by default, unexamined, because a sentence about novelty aged out of being true.
 
 ### Breaking changes
 
