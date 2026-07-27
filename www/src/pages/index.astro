@@ -1,23 +1,42 @@
 ---
 import Base from "../layouts/Base.astro";
 import guides from "../guides.json";
+import table from "../commands.json";
 
 const REPO = "https://github.com/khalilhimura/kosong";
 
-const commands = [
-  ["kosong start", "Set things up, one step at a time", "—"],
-  ["kosong new", "Create a page", "A file is a durable object you can move"],
-  ["kosong edit", "Open your editor", "The terminal opens editors; it is not one"],
-  ["kosong preview", "Serve it locally", "A local server is a temporary website"],
-  ["kosong status", "Report current state", "Software can describe itself"],
-  ["kosong doctor", "Check your setup", "Prerequisites can be checked, not guessed"],
-  ["kosong login", "Sign in by email code", "—"],
-  ["kosong sync", "Keep a private remote copy", "—"],
-  ["kosong delete-account", "Delete your account and its stored page", "Deleting an account is not deleting your files"],
-  ["kosong site init", "Make a publishable folder", "Git tracks a folder's history"],
-  ["kosong site publish", "Build and deploy", "Deployment moves files. It is not magic"],
-  ["kosong site rollback", "See past versions", "Published systems change with intent"],
+// The front page shows fewer commands than the README, in a different order,
+// and `login` without its `logout` twin — a landing page is not a reference.
+// What it does not do is describe them in its own words: each row's wording
+// comes from the README, collected at build time.
+//
+// Every key below must match a README row. A rename there fails this build
+// rather than quietly emptying a cell, which is how the last drift survived a
+// deploy.
+const shown = [
+  ["kosong start"],
+  ["kosong new"],
+  ["kosong edit"],
+  ["kosong preview"],
+  ["kosong status"],
+  ["kosong doctor"],
+  ["kosong login / logout", "kosong login"],
+  ["kosong sync"],
+  ["kosong delete-account"],
+  ["kosong site init"],
+  ["kosong site publish"],
+  ["kosong site rollback"],
 ];
+
+const commands = shown.map(([key, label]) => {
+  const row = table.find((command) => command.name === key);
+  if (!row) {
+    throw new Error(
+      `The README's command table has no row for "${key}". Reconcile this list with README.md.`,
+    );
+  }
+  return [label ?? row.name, row.does, row.teaches];
+});
 
 const owned = [
   ["Your page", "kosong.md", "Any Markdown editor"],
