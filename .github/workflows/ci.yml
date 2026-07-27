@@ -170,6 +170,50 @@ jobs:
           fi
           grep -q 'Probe' dist/index.html
 
+  site:
+    name: Project website
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: www
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: www/package-lock.json
+
+      - run: npm ci
+
+      # `npm run build` runs scripts/collect.mjs first, which reads the guides,
+      # the README's command table, and install.sh out of the repository. That
+      # is the point of this job: the site describes nothing in its own words,
+      # so a rename in the README fails here rather than being noticed on the
+      # published page. It was noticed on the published page once.
+      - name: Build
+        run: npm run build
+
+      - name: The build must produce a page
+        run: test -f dist/index.html
+
+      - name: The site must serve the installer the repository ships
+        # The front page tells people to pipe this into a shell. If the copy
+        # under dist/ ever differs from the one reviewers read in the
+        # repository, the reviewed script is not the executed script.
+        run: cmp dist/install.sh ../install.sh
+
+      - name: The published page must carry no script
+        # The same guard the bundled template carries, for the same reason:
+        # this page is hand-written and has no need of JavaScript, so anything
+        # executable appearing in it arrived by accident.
+        run: |
+          set -euo pipefail
+          if grep -rqiE '<script|javascript:' dist --include='*.html'; then
+            echo "::error::the site published executable content"
+            exit 1
+          fi
+
   secrets:
     name: Secret scan
     runs-on: ubuntu-latest
