@@ -1,7 +1,19 @@
 //! Cloudflare Pages, through `wrangler`.
 //!
 //! Permitted operations, per technical specification §12.2: `whoami`,
-//! `pages project list`, `pages deploy`, `pages deployment list`.
+//! `pages project list`, `pages project create`, `pages deploy`,
+//! `pages deployment list`.
+//!
+//! # Why `pages project create` is here
+//!
+//! It was not in the original set, and its absence made `kosong site publish`
+//! impossible to complete for anyone publishing for the first time: `wrangler
+//! pages deploy --project-name X` fails outright when `X` does not exist, and
+//! tells the user to run a command kosong did not offer. Found by the first
+//! substantive live smoke run, which is what that workflow exists for.
+//!
+//! Verified against Wrangler 4.114: `wrangler pages project create
+//! <project-name> [--production-branch <branch>]`.
 //!
 //! # There is no rollback operation here, and that is deliberate
 //!
@@ -41,6 +53,15 @@ pub enum CloudflareOperation {
     /// The Pages projects on that account.
     PagesProjectList,
 
+    /// Create a Pages project to publish into.
+    PagesProjectCreate {
+        project: String,
+        /// Which branch Cloudflare treats as production. Always stated rather
+        /// than left to wrangler, which would otherwise ask — and kosong runs
+        /// wrangler with no terminal to answer from.
+        production_branch: Option<String>,
+    },
+
     /// The deployment history for one project.
     PagesDeploymentList { project: String },
 
@@ -55,6 +76,20 @@ pub enum CloudflareOperation {
 }
 
 impl CloudflareOperation {
+    pub fn project_create(
+        project: &str,
+        production_branch: Option<&str>,
+    ) -> Result<Self, ProviderError> {
+        let production_branch = match production_branch {
+            Some(value) => Some(validate_name("branch", value)?),
+            None => None,
+        };
+        Ok(Self::PagesProjectCreate {
+            project: validate_name("project", project)?,
+            production_branch,
+        })
+    }
+
     pub fn deployment_list(project: &str) -> Result<Self, ProviderError> {
         Ok(Self::PagesDeploymentList {
             project: validate_name("project", project)?,
@@ -91,6 +126,23 @@ impl Operation for CloudflareOperation {
                 vec!["pages".into(), "project".into(), "list".into()]
             }
 
+            Self::PagesProjectCreate {
+                project,
+                production_branch,
+            } => {
+                let mut args = vec![
+                    "pages".into(),
+                    "project".into(),
+                    "create".into(),
+                    project.clone(),
+                ];
+                if let Some(branch) = production_branch {
+                    args.push("--production-branch".into());
+                    args.push(branch.clone());
+                }
+                args
+            }
+
             Self::PagesDeploymentList { project } => vec![
                 "pages".into(),
                 "deployment".into(),
@@ -123,7 +175,7 @@ impl Operation for CloudflareOperation {
     fn mutating(&self) -> bool {
         match self {
             Self::WhoAmI | Self::PagesProjectList | Self::PagesDeploymentList { .. } => false,
-            Self::PagesDeploy { .. } => true,
+            Self::PagesProjectCreate { .. } | Self::PagesDeploy { .. } => true,
         }
     }
 
@@ -131,6 +183,9 @@ impl Operation for CloudflareOperation {
         match self {
             Self::WhoAmI => "Check which Cloudflare account is signed in.".into(),
             Self::PagesProjectList => "List your Cloudflare Pages projects.".into(),
+            Self::PagesProjectCreate { project, .. } => {
+                format!("Make a place on Cloudflare for `{project}` to live.")
+            }
             Self::PagesDeploymentList { project } => {
                 format!("List past deployments of `{project}`.")
             }
@@ -143,6 +198,10 @@ impl Operation for CloudflareOperation {
     fn remote_effect(&self) -> Option<String> {
         match self {
             Self::WhoAmI | Self::PagesProjectList | Self::PagesDeploymentList { .. } => None,
+            Self::PagesProjectCreate { project, .. } => Some(format!(
+                "creates an empty Cloudflare Pages project called `{project}` on your account. \
+                 Nothing is published to it by this step, and the address it reserves is public"
+            )),
             Self::PagesDeploy { project, .. } => Some(format!(
                 "uploads your built files to Cloudflare and makes them the live version of \
                  `{project}`, visible to anyone with the address"

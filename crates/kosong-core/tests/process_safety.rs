@@ -521,6 +521,26 @@ fn cloudflare_operations_build_the_expected_argv() {
         vec!["pages", "project", "list"]
     );
     assert_eq!(
+        CloudflareOperation::project_create("my-site", Some("main"))
+            .unwrap()
+            .args(),
+        vec![
+            "pages",
+            "project",
+            "create",
+            "my-site",
+            "--production-branch",
+            "main"
+        ]
+    );
+    // Without a branch the flag is absent entirely, not passed empty.
+    assert_eq!(
+        CloudflareOperation::project_create("my-site", None)
+            .unwrap()
+            .args(),
+        vec!["pages", "project", "create", "my-site"]
+    );
+    assert_eq!(
         CloudflareOperation::deployment_list("my-site")
             .unwrap()
             .args(),
@@ -564,6 +584,11 @@ fn only_read_only_operations_are_non_mutating() {
             .unwrap()
             .mutating()
     );
+    assert!(
+        CloudflareOperation::project_create("s", Some("main"))
+            .unwrap()
+            .mutating()
+    );
 }
 
 #[test]
@@ -574,6 +599,7 @@ fn every_mutating_operation_states_its_remote_effect() {
         Box::new(GitHubOperation::repo_create("s", true, true).unwrap()),
         Box::new(GitHubOperation::RepoSync),
         Box::new(CloudflareOperation::deploy("s", Utf8Path::new("dist"), None).unwrap()),
+        Box::new(CloudflareOperation::project_create("s", Some("main")).unwrap()),
     ];
 
     for operation in mutating {
