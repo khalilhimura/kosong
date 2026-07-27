@@ -198,9 +198,15 @@ impl Sandbox {
             panic!("the fake `{}` cannot be run: {error}", path.display());
         }
 
-        if let Ok(file) = std::fs::OpenOptions::new().write(true).open(&self.log) {
-            file.set_len(logged).expect("wind the log back");
-        }
+        // The probe has run, so the fake's own `>>` has created the log: this
+        // cannot be the case where there is nothing to wind back. Failing here
+        // rather than shrugging keeps the stray line from turning up later as
+        // an empty-log assertion failing in an unrelated test.
+        let log = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&self.log)
+            .expect("reopen the log to wind it back");
+        log.set_len(logged).expect("wind the log back");
     }
 
     fn install_fakes(&self) {
