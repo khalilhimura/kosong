@@ -68,6 +68,11 @@ addresses, `Authorization` headers, and provider credentials.
 Logs record an email's **domain** and a **keyed hash** of the client IP — enough
 to spot an attack pattern, not enough to identify a person.
 
+kosong collects **no product analytics** — no usage events, no crash reports, no
+install ping, no version check. [`spec/telemetry-v1.md`](spec/telemetry-v1.md)
+states exactly what is and is not recorded, including the parts that are not
+tidy.
+
 ## Reporting a vulnerability
 
 Email **khalil.himura@gmail.com**. Please include what you did, what happened,
@@ -91,6 +96,11 @@ of your page on the server. It happens immediately and cannot be undone.
 It deletes nothing on your computer, and **it does not take a published site
 offline** — that lives in your own GitHub repository and Cloudflare account,
 which kosong has no credentials for. Remove it there if you want it gone.
+
+One thing outlives the account: the security event log keeps its rows, holding an
+opaque id and a hashed IP. Once your user record is gone that id maps to nothing
+and no longer identifies you. It stays so that an attacker cannot erase the
+record of an attack by deleting the account they used.
 
 ## Known limitations in v1
 

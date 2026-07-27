@@ -156,7 +156,7 @@ crates/kosong-core/   document, workspace, render, process adapters
 crates/kosong-cli/    the kosong binary
 apps/api/             Cloudflare Worker: auth and sync
 templates/site/       the bundled Astro template
-spec/                 format profile, CLI contract, threat model
+spec/                 format profile, CLI contract, threat model, telemetry
 guide/                troubleshooting, provider boundaries, course outline
 ```
 

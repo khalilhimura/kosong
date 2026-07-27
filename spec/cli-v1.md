@@ -35,7 +35,11 @@ provider — the distinction tells a script whether the tool was ever involved.
 the command exits non-zero**. A script must be able to read the reason, not just
 observe a failure.
 
-## 3. Global flags
+## 3. Flags
+
+### Global
+
+Accepted on every command.
 
 | Flag | Effect |
 |---|---|
@@ -46,6 +50,45 @@ observe a failure.
 `--help` lists only commands that are implemented. A command that is not built
 is absent, not present and broken.
 
+### Per command
+
+| Command | Flags |
+|---|---|
+| `start` | — |
+| `new` | `--path PATH`, `--title TITLE` |
+| `edit` | `--editor COMMAND`, `--dry-run` |
+| `show` | `--raw` |
+| `preview` | `--port PORT` |
+| `status` | `--json` |
+| `doctor` | `--json` |
+| `login` | `--email EMAIL`, `--code CODE` — `--code` requires `--email` |
+| `logout` | — |
+| `delete-account` | `--dry-run`, `--yes` |
+| `sync` | `--push` or `--pull`, never both |
+| `gh` | `auth`, or `repo OWNER/NAME` |
+| `cf` | `whoami`, `projects`, `deployments` |
+| `site init` | `[NAME]`, `--dry-run`, `--yes` |
+| `site publish` | `--dry-run`, `--yes` |
+| `site rollback` | `--dry-run`, `--yes` — see below |
+
+Two entries need saying out loud, because both look like mistakes and only one
+is.
+
+**`edit --dry-run`** names the editor that would open, without opening it. It is
+the only `--dry-run` on a command that changes nothing outside the terminal, and
+it is there because "which editor is this about to launch" is a real question
+with a surprising answer: the choice is resolved from the stored setting, then
+`VISUAL`, then `EDITOR`, first match wins, and a machine often has more than one
+of those set to different things.
+
+**`site rollback` accepts `--dry-run` and `--yes`, and neither does anything.**
+The command mutates nothing: it lists deployment history and points at the
+Cloudflare dashboard, per `spec/extension-boundaries.md` §4. Disclosure and
+confirmation apply only to a mutating plan, so both flags pass straight through.
+They are recorded here rather than removed because removing an accepted flag
+breaks any script already passing it, which is a contract change and belongs in
+a version bump, not a tidy-up.
+
 ## 4. Environment
 
 | Variable | Effect |
@@ -54,7 +97,7 @@ is absent, not present and broken.
 | `KOSONG_SESSION_FILE` | Forces the credential into this file. For tests and CI, which must never touch a real keychain |
 | `KOSONG_API_URL` | Overrides the API base URL |
 | `NO_COLOR` | Any value disables colour |
-| `EDITOR`, `VISUAL` | Which editor `kosong edit` opens |
+| `EDITOR`, `VISUAL` | Which editor `kosong edit` opens. The stored setting wins, then `VISUAL`, then `EDITOR` |
 
 ## 5. `status --json`
 
