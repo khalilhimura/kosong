@@ -1,0 +1,95 @@
+# Publishing to npm
+
+The `npm` job in `.github/workflows/release.yml` does steps 1–3 below. Steps 4
+and 5 are yours, deliberately.
+
+## The order is not a detail
+
+Publishing is not atomic. Each `npm publish` is a separate request, and a
+half-published release is worse than a failed one: `kosong@0.2.0` existing
+while `@kosong/cli-linux-x64-gnu@0.2.0` does not means every Linux install
+resolves, succeeds, and then cannot run. npm versions are immutable, so the
+repair is a new version rather than a fix.
+
+1. **Platform packages first**, in any order. They depend on nothing.
+2. **The launcher last.** Its `optionalDependencies` pin exact versions, so it
+   must not exist before the things it names.
+3. **Everything under `--tag next`**, never straight to `latest`.
+4. **Verify a real install**, on macOS and on Linux.
+5. **Then move the tag:** `npm dist-tag add kosong@<version> latest`.
+
+Step 3 is what makes this recoverable. `latest` is what `npm install -g kosong`
+resolves, so until the tag moves, a partial publish is invisible to users and
+the fix is to publish the missing package and move the tag once.
+
+**Steps 4 and 5 are not automated on purpose.** A green workflow says the
+tarballs uploaded, not that the binary inside them runs. Nothing about the
+publish proves that `kosong --version` works on a machine that is not a GitHub
+runner, and once `latest` moves, it is users who find out.
+
+## What the workflow already guarantees
+
+- **A release is all-or-nothing.** `build.mjs` refuses to write the launcher at
+  all if any released target is missing from the artifacts, so a launcher whose
+  `optionalDependencies` omit a platform cannot reach the publish step.
+- **Re-running is safe.** Each publish checks `npm view <name>@<version>` first
+  and skips what is already there, so a run that failed halfway can be retried
+  rather than needing a new version.
+- **A rehearsal produces something to inspect.** `workflow_dispatch` builds and
+  packs but does not publish, and uploads the tarballs as `npm-packages`.
+- **The version cannot drift.** `build.mjs` reads `[workspace.package]` from
+  `Cargo.toml`. `--version` may add a prerelease suffix and nothing else — the
+  qualified version must still be the manifest's, which is the same rule
+  `release.yml` applies to the tag, enforced in a second place so neither can
+  be skipped alone.
+
+## Authentication
+
+The job uses npm **trusted publishing** (OIDC) rather than an `NPM_TOKEN`
+secret, with `--provenance`. `release.yml` already had `id-token: write` for
+build provenance, so this added no new permission and there is no long-lived
+credential in the repository to leak.
+
+The runner's bundled npm is too old for trusted publishing, so the job installs
+`npm@latest` first. Without that, publishing falls back to looking for a token
+that is deliberately not there.
+
+## Before the first publish ever runs
+
+None of this can be done from CI.
+
+- **Create the `@kosong` org** on npmjs, owned by the publishing account. Free
+  for public packages.
+- **Configure trusted publishing** for each package on npmjs, pointing at this
+  repository and `release.yml`. A scoped package must exist before it can be
+  configured, which is the awkward part: the first publish of each package
+  needs a token, or the packages need creating by hand once.
+- **Confirm the unscoped name `kosong` is still free.** It was on 2026-07-29.
+  If it has been taken since, the launcher, the docs and this file all change.
+- Scoped packages are **private by default**; the job passes `--access public`
+  so the first publish does not fail on it.
+
+## Verifying locally
+
+```bash
+cargo build --release
+node npm/build.mjs
+```
+
+Then, from a scratch directory:
+
+```bash
+npm install -g ./npm/dist/@kosong/cli-<your-platform> ./npm/dist/kosong
+kosong --version
+```
+
+**Read what that actually links.** Installing both packages as top-level
+globals lets the platform package's own bin win, so `kosong` runs the binary
+directly and the launcher is never exercised — a test that passes without
+testing anything. It happened during Phase A. To exercise the launcher, build
+the layout npm really produces: the launcher in `node_modules/kosong`, the
+platform package beside it under `node_modules/@kosong/`, and the `bin` symlink
+pointing at `kosong/bin/kosong.js`.
+
+If `kosong --version` prints a version that is not in `Cargo.toml`, the shell
+found a different `kosong` on `PATH` — likely one from `install.sh`.
