@@ -121,6 +121,16 @@ jobs:
       - name: A failed build must not replace a working deployment
         # §13.3 and the Phase C exit gate. This is the assertion that matters
         # most: breaking a live site is worse than failing to update it.
+        #
+        # It is also the second publish of the run, so it is the step that
+        # proves `npm install`'s lockfile no longer stops one.
+        #
+        # This step used to assert only that the publish exited non-zero, and
+        # run 30335517886 shows why that is not enough: the publish did exit
+        # non-zero, but on a stray `package-lock.json` at step 2, so the broken
+        # build never ran and the assertion the step exists for was never
+        # tested. It went green anyway. Every check below is therefore about
+        # *why* the publish failed, not that it did.
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
@@ -135,12 +145,48 @@ jobs:
           # Break the build deliberately.
           echo "this is not valid astro config" > "$WORK/$SMOKE_NAME/astro.config.mjs"
 
-          if "$BIN" --workspace "$WORK" site publish --yes; then
+          # Both streams into one log: the reason is split across them. The step
+          # the publish reached is on stdout, the failure itself on stderr.
+          # `|| status=$?` rather than `if`, so the log is kept either way.
+          status=0
+          "$BIN" --workspace "$WORK" site publish --yes > "$WORK/broken.log" 2>&1 || status=$?
+          cat "$WORK/broken.log"
+
+          if [ "$status" -eq 0 ]; then
             echo "::error::publish succeeded despite a broken build"
             exit 1
           fi
 
-          # The previous deployment must still be serving.
+          # 1. It has to have got as far as the build. Anything earlier — a
+          #    dirty tree, a missing tool, a Cloudflare refusal — exits non-zero
+          #    without ever testing what this step is here to test.
+          if ! grep -q 'Building' "$WORK/broken.log"; then
+            echo "::error::publish failed before it reached the build, so the"
+            echo "::error::assertion this step exists for was never tested."
+            exit 1
+          fi
+
+          # 2. And it has to have failed *there*: either the build tool itself
+          #    refused, or it exited zero having written nothing and kosong
+          #    caught that (SiteError::NoBuildOutput, "wrote nothing").
+          if ! grep -qE '`npm` failed|wrote nothing' "$WORK/broken.log"; then
+            echo "::error::the publish reached the build and then failed for"
+            echo "::error::some other reason. Read the log above."
+            exit 1
+          fi
+
+          # 3. The deploy must never have been attempted. This is the step's
+          #    own title, asserted directly rather than inferred from the site
+          #    still being up — a deploy that ran and happened to be harmless
+          #    would otherwise pass unnoticed.
+          if grep -q 'pages deploy' "$WORK/broken.log"; then
+            echo "::error::a broken build reached the deploy step"
+            exit 1
+          fi
+
+          echo "Confirmed: the publish failed at the build, before any deploy."
+
+          # 4. And the deployment that was already live is still serving.
           curl -fsS "$URL" | grep -q "Live Smoke ${GITHUB_RUN_ID}"
           echo "Confirmed: the known-good deployment survived a failed build."
 
