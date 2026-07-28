@@ -40,6 +40,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          # This job runs `cargo build`, which executes build.rs from every
+          # third-party crate in the tree. Checkout otherwise writes the job's
+          # GITHUB_TOKEN into .git/config, where any of that code could read
+          # it — and with no job-level permissions block, that token carries
+          # the workflow's `contents: write`. Nothing here pushes.
+          persist-credentials: false
 
       - name: Install toolchain
         run: |
@@ -122,6 +129,11 @@ jobs:
     if: github.event_name == 'push'
     steps:
       - uses: actions/checkout@v7
+        with:
+          # action-gh-release takes the token through the environment, not the
+          # git config, so persisting it buys nothing and leaves a
+          # `contents: write` credential on disk.
+          persist-credentials: false
       - uses: actions/download-artifact@v8
         with:
           path: artifacts
@@ -164,6 +176,12 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          # This job runs `npm install -g npm@latest` and `npm publish`, both of
+          # which execute registry code. The job's permissions block already
+          # reduces the token to id-token only; not writing it to disk at all
+          # is free.
+          persist-credentials: false
       - uses: actions/download-artifact@v8
         with:
           path: artifacts
