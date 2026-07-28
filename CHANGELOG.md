@@ -39,6 +39,44 @@ and environment variables — will not change without being named here.
   codes readable by anyone with access to the logs. Sign-in fails with `503
   EMAIL_UNAVAILABLE` and the misconfiguration is logged once, loudly.
 
+- Publishing a page a second time now works. Every publish runs `npm install`,
+  which writes `package-lock.json`; the publish after that read the lockfile as
+  a change kosong did not make and stopped, telling you to commit a file kosong
+  itself had caused to appear. `init` → `publish` → `edit` → `publish` failed
+  that way for every site, and the only escape was to commit the file by hand.
+  The lockfile is now kosong's to keep, and is committed with the rest of your
+  site. A site that is already stuck heals itself on the next publish — there
+  is nothing to migrate and nothing to delete first.
+
+- Deleting a file kosong made is now recorded. `rm astro.config.mjs` followed
+  by `kosong site publish` reported success while git quietly kept the file for
+  ever, so the history you own stopped matching the folder in front of you, and
+  anyone who cloned it got the file back. A removed file is now staged as a
+  removal, the same as any other change.
+
+- A push that fails now says why. `could not send to GitHub; your page will
+  still be published` was the whole report — no cause, and nothing to do about
+  it. kosong now prints git's own reason, and where it recognises the cause the
+  repair names the command that fixes it. The common cause is worth stating
+  outright, because it is not obvious: being signed in to GitHub and being
+  signed in to git are two different things. `gh auth login` asks about the
+  second as a separate question, and `gh auth status` passing tells you nothing
+  about it — so kosong could create your repository and then fail every push to
+  it, with neither tool objecting. `gh auth setup-git`, run once, connects the
+  second half, and the message says to run `gh auth login` first if that
+  command reports you are not signed in at all. A failed push still does not
+  stop the publish; your page goes live either way.
+
+- A project name that begins like a token is no longer blanked out. kosong
+  hides anything credential-shaped in the output of the commands it runs, and
+  one of the shapes it hid was three characters — `xox` — which are also the
+  first three of `xoxo`. If your Cloudflare Pages project was called
+  `xoxo-blog`, kosong never saw the name Cloudflare sent back: it concluded the
+  project did not exist, tried to create one that did, and told you to choose a
+  different name for a name already yours. A credential is now recognised only
+  at the start of a word, and Slack's token types are named in full rather than
+  by a prefix they share with ordinary words.
+
 ## [0.1.2] — 2026-07-27
 
 A failing sign-in now tells you something you can act on. Nothing about the
