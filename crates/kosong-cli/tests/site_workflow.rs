@@ -59,6 +59,10 @@ const EXEC_RETRY_PAUSE: Duration = Duration::from_millis(20);
 /// codes and the wording are the real ones, so a failure reads the way it would
 /// in a terminal.
 ///
+/// Where the two rules part company — a tracked file deleted from the folder,
+/// which git knows and the disk does not — no fake can answer, so
+/// `use_real_git` hands that one test the machine's own git instead.
+///
 /// `status` reports the lockfile as untracked whenever it is there. That is the
 /// state a second publish actually finds — the fake commits nothing, so the
 /// file stays untracked forever, which is the harshest version of the case and
@@ -243,6 +247,19 @@ impl Sandbox {
         std::fs::create_dir_all(&config).expect("config dir");
         std::fs::create_dir_all(&bin).expect("bin dir");
 
+        // Only `use_real_git` reads this, but writing it for every sandbox
+        // keeps the two kinds of test identical apart from what is on PATH.
+        // The fakes ignore it, and a real git run without it would answer
+        // `git config --get user.email` from whatever the machine happens to
+        // have — which on a CI runner is nothing, so `site init` would stop at
+        // the identity warning and commit nothing at all.
+        std::fs::write(
+            root.join("gitconfig"),
+            "[user]\n\tname = kosong test\n\temail = tester@example.test\n\
+             [commit]\n\tgpgsign = false\n",
+        )
+        .expect("write a git identity");
+
         let sandbox = Self {
             _guard: guard,
             root,
@@ -331,6 +348,49 @@ impl Sandbox {
         self.fake("wrangler", WRANGLER_WITHOUT_THE_PROJECT);
     }
 
+    /// Removes the fake git, so kosong finds the machine's own.
+    ///
+    /// The fake's rule is "the path exists on disk", which is the very thing at
+    /// issue where a *tracked* file has been deleted: no fake can say whether
+    /// git's index still holds a path without becoming a reimplementation of
+    /// the index, and a reimplementation would only ever confirm its own
+    /// beliefs. So one test pays for a real repository, and keeps the fake npm,
+    /// gh, and wrangler — nothing there needs an account.
+    ///
+    /// `gh` is replaced rather than removed: removing it would let a real `gh`
+    /// on the machine answer instead, and this test has no business asking
+    /// anyone's GitHub anything. Failing every invocation reads as "not signed
+    /// in", which kosong skips over.
+    fn use_real_git(&self) {
+        std::fs::remove_file(self.bin.join("git")).expect("remove the fake git");
+        self.fake("gh", "exit 1");
+
+        let found = Command::new("git").arg("--version").output();
+        assert!(
+            found.is_ok_and(|output| output.status.success()),
+            "this test needs a real `git` on PATH"
+        );
+    }
+
+    /// Asks real git something about the site folder.
+    fn real_git(&self, args: &[&str]) -> String {
+        let output = Command::new("git")
+            .current_dir(self.site_root())
+            .args(args)
+            .env("GIT_CONFIG_GLOBAL", self.root.join("gitconfig"))
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .output()
+            .expect("run git");
+
+        assert!(
+            output.status.success(),
+            "`git {}` failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).into_owned()
+    }
+
     fn run(&self, args: &[&str]) -> Output {
         Command::new(binary())
             .arg("--workspace")
@@ -338,6 +398,12 @@ impl Sandbox {
             .args(args)
             .env("KOSONG_CONFIG_DIR", &self.config)
             .env("KOSONG_SESSION_FILE", self.config.join("session"))
+            // Where a real git is used, it reads this sandbox's identity and
+            // nothing of the machine's. Set for every run: the fakes ignore it,
+            // and a `git` that is sometimes configured and sometimes not is a
+            // difference nobody would think to look for.
+            .env("GIT_CONFIG_GLOBAL", self.root.join("gitconfig"))
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
             // The fakes come first, so they shadow any real provider. The
             // system directories follow because the fakes are shell scripts
             // and need `mkdir` and friends — without them a fake fails with
@@ -576,6 +642,64 @@ fn a_second_publish_is_not_refused_over_npms_lockfile() {
         .filter(|line| line.starts_with("git add"))
         .any(|line| line.contains("package-lock.json"));
     assert!(staged, "the lockfile must be committed, not just ignored");
+}
+
+#[test]
+fn publish_records_a_template_file_the_user_deleted() {
+    // The gap that filtering owned paths on existence alone opened: a file the
+    // user deleted is absent from the folder and still in git's index, and
+    // filtering it left the deletion unstaged. The publish exited 0 while git
+    // went on holding a file the folder no longer had — where the plain
+    // `git add` that came before had recorded the deletion.
+    //
+    // `astro.config.mjs` is the one owned path that reaches this far: Astro
+    // builds without it, so nothing earlier in the publish refuses. Deleting
+    // `package.json` fails `npm install` instead, and deleting
+    // `src/pages/index.astro` leaves an empty build that step 5 stops.
+    //
+    // Run against a real repository, because the claim is about git's index
+    // and nothing else can answer for it.
+    let sandbox = Sandbox::new();
+    sandbox.use_real_git();
+
+    sandbox.run(&["new", "--title", "My First Site"]);
+    let init = sandbox.run(&["site", "init", "--yes"]);
+    assert_eq!(code(&init), 0, "stderr: {}", stderr(&init));
+
+    // Without a first commit there is nothing tracked to delete, and the test
+    // would pass on an empty repository no matter what the code did.
+    let tracked = sandbox.real_git(&["ls-files"]);
+    assert!(
+        tracked.lines().any(|path| path == "astro.config.mjs"),
+        "`site init` must have committed the template first:\n{tracked}"
+    );
+
+    let first = sandbox.run(&["site", "publish", "--yes"]);
+    assert_eq!(code(&first), 0, "stderr: {}", stderr(&first));
+
+    std::fs::remove_file(sandbox.site_root().join("astro.config.mjs"))
+        .expect("delete a template file");
+
+    let second = sandbox.run(&["site", "publish", "--yes"]);
+    assert_eq!(
+        code(&second),
+        0,
+        "the publish stopped.\nstdout: {}\nstderr: {}",
+        stdout(&second),
+        stderr(&second)
+    );
+
+    let tracked = sandbox.real_git(&["ls-files"]);
+    assert!(
+        !tracked.lines().any(|path| path == "astro.config.mjs"),
+        "git still tracks a file the folder no longer has:\n{tracked}"
+    );
+
+    let status = sandbox.real_git(&["status", "--porcelain"]);
+    assert!(
+        !status.contains("astro.config.mjs"),
+        "the deletion was left unstaged:\n{status}"
+    );
 }
 
 #[test]

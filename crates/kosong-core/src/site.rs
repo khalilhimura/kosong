@@ -415,6 +415,35 @@ mod tests {
     }
 
     #[test]
+    fn an_owned_directory_counts_as_tracked_when_git_lists_what_is_inside_it() {
+        // `git ls-files -- src/content` answers with the files under it, never
+        // with the directory, so an exact match alone would read the one owned
+        // directory as untracked — and a publish would then filter it out the
+        // moment it was deleted, which is exactly the case worth staging.
+        //
+        // Written against `owned_paths` for the same reason the lockfile test
+        // is: the prefix matching in between is where a near-miss entry stays
+        // invisible.
+        let listed = "package.json\nsrc/content/page.html\nsrc/content/page.json\n";
+        let tracked: Vec<String> = owned_paths()
+            .iter()
+            .filter(|path| crate::providers::git::tracks(listed, path))
+            .map(ToString::to_string)
+            .collect();
+
+        assert!(tracked.iter().any(|path| path == "src/content"));
+        assert!(tracked.iter().any(|path| path == "package.json"));
+        assert!(
+            !tracked.iter().any(|path| path == "astro.config.mjs"),
+            "a path git did not list is not tracked"
+        );
+        assert!(
+            !tracked.iter().any(|path| path == "package-lock.json"),
+            "`package.json` being listed must not make the lockfile tracked"
+        );
+    }
+
+    #[test]
     fn a_site_name_is_always_url_safe() {
         assert_eq!(site_name_from(Some("My Site"), "ignored"), "my-site");
         assert_eq!(site_name_from(None, "My First Site"), "my-first-site");
