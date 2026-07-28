@@ -153,3 +153,112 @@ jobs:
             ```
 
             The installer at https://kosong.thefutureissolo.com/install.sh does this for you.
+
+  npm:
+    name: npm
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      # Trusted publishing (OIDC), so no long-lived NPM_TOKEN exists to leak.
+      # The same token type the attestation step above already uses.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: npm new enough to publish without a token
+        # Trusted publishing needs npm 11.5.1 or later, and the runner's
+        # bundled npm is older. Without this the publish falls back to looking
+        # for a token that is deliberately not there.
+        run: npm install -g npm@latest
+
+      - name: Build the packages
+        id: build
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          # On workflow_dispatch there is no tag, so the manifest decides and
+          # the generator's own agreement check is a no-op.
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            node npm/build.mjs --artifacts artifacts --version "$VERSION"
+          else
+            node npm/build.mjs --artifacts artifacts
+            VERSION="$(node -p "require('./npm/dist/kosong/package.json').version")"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Pack, so a rehearsal produces something to inspect
+        run: |
+          set -euo pipefail
+          mkdir -p npm/tarballs
+          for package in npm/dist/@kosong/* npm/dist/kosong; do
+            ( cd "$package" && npm pack --pack-destination "$GITHUB_WORKSPACE/npm/tarballs" )
+          done
+          ls -l npm/tarballs
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: npm-packages
+          path: npm/tarballs/*.tgz
+          if-no-files-found: error
+
+      - name: Publish
+        if: github.event_name == 'push'
+        env:
+          VERSION: ${{ steps.build.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          # Platform packages first, the launcher last. Its optionalDependencies
+          # pin exact versions, so it must not exist before the things it names:
+          # a launcher on the registry whose platform package is missing is an
+          # install that succeeds and then cannot run, and npm versions are
+          # immutable, so the repair is a new version rather than a fix.
+          #
+          # Everything goes to the `next` tag. `latest` is what
+          # `npm install -g kosong` resolves, so until the tag is moved by hand
+          # a partial publish is invisible to users. That is the whole reason
+          # this is recoverable.
+          publish() {
+            name="$(node -p "require('./$1/package.json').name")"
+            if npm view "$name@$VERSION" version >/dev/null 2>&1; then
+              echo "already published: $name@$VERSION"
+              return 0
+            fi
+            ( cd "$1" && npm publish --provenance --access public --tag next )
+          }
+
+          for package in npm/dist/@kosong/*; do publish "$package"; done
+          publish npm/dist/kosong
+
+      - name: How to finish the release
+        if: github.event_name == 'push'
+        env:
+          VERSION: ${{ steps.build.outputs.version }}
+        run: |
+          {
+            echo "## npm"
+            echo
+            echo "Published to the \`next\` tag. Nothing resolves \`npm install -g kosong\` yet."
+            echo
+            echo "Verify a real install, on macOS and on Linux:"
+            echo
+            echo '```bash'
+            echo "npm install -g kosong@$VERSION"
+            echo "kosong --version"
+            echo '```'
+            echo
+            echo "Then, and only then:"
+            echo
+            echo '```bash'
+            echo "npm dist-tag add kosong@$VERSION latest"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

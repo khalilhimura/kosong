@@ -12,6 +12,24 @@ and environment variables — will not change without being named here.
 
 ### Added
 
+- kosong can be installed with npm. `npm install -g kosong` now works, and
+  `npx kosong start` runs it without installing anything permanently. This is
+  in addition to the installer at
+  <https://kosong.thefutureissolo.com/install.sh>, which is unchanged and still
+  the way to get kosong without involving Node at all.
+
+  The npm package carries the same binary the installer downloads. There is no
+  install script and nothing is fetched while installing: npm selects the build
+  for your machine from ones already published, so this works offline, under
+  `--ignore-scripts`, and behind a proxy that inspects TLS. macOS and glibc
+  Linux, on Intel and ARM — the same four builds as every other channel.
+  Windows and Alpine are not among them, and on those the install stops with a
+  message saying so rather than leaving you something that cannot run.
+
+  Installed this way, `kosong` is a small script that starts the real binary,
+  which costs a fraction of a second on each command. If that matters to you,
+  use the installer.
+
 - The service now deletes what it no longer needs. Security events are kept 90
   days and verification-code records 24 hours; a daily job removes the rest.
   Both tables previously grew without limit, which meant the record of a
