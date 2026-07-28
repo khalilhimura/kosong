@@ -29,6 +29,9 @@ use serde::{Deserialize, Serialize};
 /// Directory name for generated content inside the site.
 const CONTENT_DIR: &str = "src/content";
 
+/// npm's lockfile, written into the site by `npm install`.
+const LOCKFILE: &str = "package-lock.json";
+
 /// Where the built output lands. Fixed by the template's Astro config.
 pub const BUILD_OUTPUT_DIR: &str = "dist";
 
@@ -70,12 +73,34 @@ pub const TEMPLATE: [TemplateFile; 4] = [
 ///
 /// Used both for scaffolding and for the §13.3 dirty-tree check. A file
 /// outside this list belongs to the user and is never committed by kosong.
+///
+/// # Owned is not the same as written by kosong
+///
+/// `package-lock.json` is here but deliberately not in [`TEMPLATE`]. npm writes
+/// it, not kosong, and it has no contents to `include_str!` — putting it in the
+/// template would make `scaffold` create an empty lockfile at `site init`,
+/// which is a lie about a file npm is about to generate properly.
+///
+/// It has to be owned all the same. `npm install` runs at publish step 4 and
+/// leaves the lockfile behind, so without this every *second* publish saw a
+/// file it had not written, called it unrelated, and refused: `init` →
+/// `publish` ✓ → `publish` ✗, for every site. Owning it also keeps the promise
+/// the product is built on — an ordinary Astro project you own is materially
+/// weaker without the lockfile, because the build is not reproducible without
+/// one.
+///
+/// # These paths are not guaranteed to exist
+///
+/// The lockfile is absent for the whole of `site init`. Callers handing this
+/// list to `git add` or `git commit --only` must filter it to what is actually
+/// there — see `present` in the CLI's `site` command.
 pub fn owned_paths() -> Vec<Utf8PathBuf> {
     let mut paths: Vec<Utf8PathBuf> = TEMPLATE
         .iter()
         .map(|file| Utf8PathBuf::from(file.path))
         .collect();
     paths.push(Utf8PathBuf::from(CONTENT_DIR));
+    paths.push(Utf8PathBuf::from(LOCKFILE));
     paths
 }
 
@@ -353,6 +378,40 @@ mod tests {
         assert!(owned.contains(&Utf8PathBuf::from("src/content")));
         assert!(!owned.contains(&Utf8PathBuf::from("node_modules")));
         assert!(!owned.contains(&Utf8PathBuf::from("dist")));
+
+        // Owned, because `npm install` leaves it in the site at publish step 4
+        // and the next publish would otherwise read it as a stray file.
+        assert!(owned.contains(&Utf8PathBuf::from("package-lock.json")));
+
+        // But not a template file: kosong has nothing to write there, and
+        // scaffolding an empty lockfile would be worse than having none.
+        assert!(
+            !TEMPLATE.iter().any(|f| f.path == "package-lock.json"),
+            "the lockfile is npm's to write, not kosong's"
+        );
+    }
+
+    #[test]
+    fn the_lockfile_npm_leaves_behind_is_not_a_change_kosong_did_not_make() {
+        // The bug this guards, seen in live smoke run 30335517886: the first
+        // publish ran `npm install`, which wrote `package-lock.json`; the
+        // second publish read that file as unrelated and refused, telling the
+        // user to commit a file kosong itself had caused to appear.
+        //
+        // Written against `unrelated_changes` rather than the list alone
+        // because the refusal is what the user actually hits, and the prefix
+        // matching in between is where an entry like `package` would still
+        // have looked correct in `owned_paths()` while failing here.
+        let status = "?? package-lock.json\n?? my-private-notes.txt\n";
+
+        let unrelated = crate::providers::git::unrelated_changes(status, &owned_paths());
+        let paths: Vec<&str> = unrelated.iter().map(|c| c.path.as_str()).collect();
+
+        assert_eq!(
+            paths,
+            ["my-private-notes.txt"],
+            "the lockfile is ours; the notes file is not"
+        );
     }
 
     #[test]

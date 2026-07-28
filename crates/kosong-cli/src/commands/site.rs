@@ -208,17 +208,16 @@ fn start_repository(context: &Context, site_root: &Utf8Path, approval: Approval)
         }
     }
 
-    perform_checked(
-        ui,
-        &GitOperation::add(site::owned_paths()),
-        site_root,
-        approval,
-    )?;
+    // `package-lock.json` is owned but does not exist yet: npm writes it at
+    // publish step 4, long after this runs.
+    let staged = present(site_root, site::owned_paths());
+
+    perform_checked(ui, &GitOperation::add(staged.clone()), site_root, approval)?;
     perform_checked(
         ui,
         &GitOperation::Commit {
             message: "Set up site with kosong".into(),
-            paths: site::owned_paths(),
+            paths: staged,
         },
         site_root,
         approval,
@@ -226,6 +225,43 @@ fn start_repository(context: &Context, site_root: &Utf8Path, approval: Approval)
 
     ui.status(Mark::Good, "started tracking history", "first commit made");
     Ok(())
+}
+
+/// The owned paths that are actually present in `site_root`.
+///
+/// [`site::owned_paths`] names what belongs to the site, which is not the same
+/// as what is on disk right now — `package-lock.json` is ours from the moment
+/// npm writes it, and absent for the whole of `site init`. Both git operations
+/// that receive the list refuse a path they cannot find, in different ways and
+/// with different exit codes:
+///
+/// - `git add -- missing.txt` exits **128** with
+///   `fatal: pathspec 'missing.txt' did not match any files`. There is no
+///   `--ignore-unmatch` to soften it; that is a `git rm` option.
+/// - `git commit --only -- missing.txt` exits **1** with
+///   `error: pathspec ... did not match any file(s) known to git`, and its bar
+///   is higher still: a file that exists but has never been staged is just as
+///   unknown. Filtering only the `add` list would therefore trade one broken
+///   command for another, because `--only` would then be handed a lockfile
+///   `add` had just skipped.
+///
+/// Both were run and observed rather than inferred from the documentation.
+///
+/// The cost is that a *tracked* file the user deleted is no longer staged as a
+/// deletion, since it fails the same existence test. Recovering that would mean
+/// asking git what it tracks — a new operation, and §12.2 keeps that list
+/// short — to serve a state that stops the publish at `npm install` or the
+/// build well before any commit is reached.
+///
+/// The result is never empty in practice: `prepare_content` writes
+/// `src/content` before either caller runs, and `atomic_write` creates the
+/// directories on the way. That matters, because `git commit --only` with no
+/// paths at all is itself a fatal error rather than a no-op.
+fn present(site_root: &Utf8Path, paths: Vec<Utf8PathBuf>) -> Vec<Utf8PathBuf> {
+    paths
+        .into_iter()
+        .filter(|path| site_root.join(path).exists())
+        .collect()
 }
 
 /// Offers to create a GitHub repository. Declining is fine.
@@ -449,12 +485,12 @@ fn commit_and_push(
 ) -> CliResult<()> {
     let ui = context.ui;
 
-    perform(
-        ui,
-        &GitOperation::add(site::owned_paths()),
-        site_root,
-        approval,
-    )?;
+    // By now `npm install` has run, so the lockfile is here and is committed
+    // along with everything else. That is what adopts the stray lockfile in a
+    // site created before it was owned: no migration, just the next publish.
+    let staged = present(site_root, site::owned_paths());
+
+    perform(ui, &GitOperation::add(staged.clone()), site_root, approval)?;
 
     // A commit with nothing staged exits non-zero, which is not a failure
     // worth stopping a publish for.
@@ -462,7 +498,7 @@ fn commit_and_push(
         ui,
         &GitOperation::Commit {
             message: "Update page with kosong".into(),
-            paths: site::owned_paths(),
+            paths: staged,
         },
         site_root,
         approval,
