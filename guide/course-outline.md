@@ -79,11 +79,14 @@ explain what each commit contains.
 
 **Built on:** `kosong site publish`, `kosong gh`, `kosong cf`
 
-Deployment moves files to a computer that answers requests. It is not magic, and
-it is not a transfer of ownership.
+Deployment moves files to a computer that answers requests. A place has to exist
+on that computer before files can be put in it, which is why publishing makes
+the project before it uploads anything. It is not magic, and it is not a
+transfer of ownership.
 
 - A static site is files; a host is a computer that serves them
 - Building: source in, `dist/` out
+- Why a hosting project is created before the first upload, and only once
 - Why `--dry-run` exists, and reading a plan before approving it
 - Why kosong never holds your GitHub or Cloudflare credentials — see
   [providers](providers.md)
