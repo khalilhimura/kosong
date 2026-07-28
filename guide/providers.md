@@ -45,6 +45,7 @@ Four operations. Not four categories — four.
 |---|---|---|
 | Check which account | `wrangler whoami` | No |
 | List Pages projects | `wrangler pages project list` | No |
+| Make a Pages project | `wrangler pages project create <name> --production-branch main` | **Yes** |
 | List deployments | `wrangler pages deployment list --project-name <name>` | No |
 | Deploy | `wrangler pages deploy <dir> --project-name <name>` | **Yes** |
 

@@ -65,7 +65,7 @@ see the plan without doing anything.
 | `kosong sync` | Keep a private remote copy | — |
 | `kosong gh` / `kosong cf` | Ask GitHub or Cloudflare about your setup | — |
 | `kosong site init` | Make a publishable folder | Git tracks a folder's history |
-| `kosong site publish` | Build and deploy | Deployment moves files. It is not magic |
+| `kosong site publish` | Build and deploy | A place must exist before files go in it. Deployment moves files, not magic |
 | `kosong site rollback` | See past versions, and where to restore one | An honest limit beats a convincing wrong answer |
 
 `kosong status --json` and `kosong doctor --json` produce stable machine-readable

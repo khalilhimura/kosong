@@ -22,6 +22,16 @@ and environment variables — will not change without being named here.
 
 ### Fixed
 
+- Publishing a page now works the first time. `kosong site publish` deployed
+  into a Cloudflare Pages project without ever creating one, so a first publish
+  stopped at a wrangler error telling you to run a command kosong does not
+  offer. Publishing now makes the project when it does not exist, as a step it
+  shows you and asks about before running. Publishing to a project that already
+  exists is unchanged and asks nothing extra. A name Cloudflare will not accept
+  is now refused with an explanation instead of a provider error, and a name
+  already taken on your account stops the publish rather than deploying into
+  someone else's project.
+
 - A deployed service with no email provider configured now refuses to send,
   rather than falling back to writing verification codes into its own log. That
   fallback exists for local development, where the log and the mailbox belong
