@@ -30,6 +30,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { workspaceVersion } from './cargo.mjs';
+
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
 const POSIX = process.platform !== 'win32';
@@ -60,12 +62,7 @@ function node(args, options = {}) {
 // The generator's guards
 // ---------------------------------------------------------------------------
 
-function manifestVersion() {
-  const manifest = fs.readFileSync(path.join(ROOT, 'Cargo.toml'), 'utf8');
-  return manifest.split('[workspace.package]')[1].match(/^\s*version\s*=\s*"([^"]+)"/m)[1];
-}
-
-const VERSION = manifestVersion();
+const VERSION = workspaceVersion(ROOT);
 
 console.log(`\nnpm packaging, kosong ${VERSION}\n`);
 
@@ -90,13 +87,33 @@ check('generator refuses an incomplete release', () => {
   fs.mkdirSync(path.join(artifacts, stem));
   fs.writeFileSync(path.join(artifacts, stem, 'kosong'), 'stand-in');
 
-  const result = node(['npm/build.mjs', '--artifacts', artifacts, '--version', VERSION]);
+  // An output directory of its own, because a failed build now preserves
+  // whatever was there before. Pointed at the shared `npm/dist`, "no launcher
+  // exists" would be satisfied by a launcher left behind from an earlier
+  // passing check, and the assertion would hold without testing anything.
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'kosong-out-'));
+  fs.rmSync(out, { recursive: true, force: true });
+
+  const result = node([
+    'npm/build.mjs', '--artifacts', artifacts, '--version', VERSION, '--out', out,
+  ]);
   assert.notEqual(result.status, 0, 'expected a non-zero exit');
   assert.match(result.stderr, /incomplete release/);
   assert.ok(
-    !fs.existsSync(path.join(HERE, 'dist', 'kosong')),
+    !fs.existsSync(path.join(out, 'kosong')),
     'the launcher was written anyway; the guard must precede emission',
   );
+});
+
+check('a failed build leaves the last good one alone', () => {
+  // Everything that can throw runs before the output directory is touched.
+  // Clearing it first would mean a mistyped `--version` destroys a working
+  // build and then declines to replace it, which is the worst of both.
+  assert.equal(node(['npm/build.mjs']).status, 0, 'the baseline build failed');
+  const before = fs.readdirSync(path.join(HERE, 'dist'));
+
+  assert.notEqual(node(['npm/build.mjs', '--version', '99.0.0']).status, 0);
+  assert.deepEqual(fs.readdirSync(path.join(HERE, 'dist')), before);
 });
 
 // ---------------------------------------------------------------------------

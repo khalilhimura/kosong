@@ -33,6 +33,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { workspaceVersion } from './cargo.mjs';
+
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
 
@@ -92,20 +94,6 @@ function isHost(target) {
 // ---------------------------------------------------------------------------
 // Inputs
 // ---------------------------------------------------------------------------
-
-/// Reads the workspace version from Cargo.toml.
-///
-/// Single source of truth, deliberately. `release.yml` already refuses to
-/// package a tag that disagrees with this value; the npm packages must not
-/// introduce a third place a version can be wrong.
-function workspaceVersion() {
-  const manifest = fs.readFileSync(path.join(ROOT, 'Cargo.toml'), 'utf8');
-  const section = manifest.split('[workspace.package]')[1];
-  if (!section) throw new Error('Cargo.toml has no [workspace.package] section');
-  const match = section.match(/^\s*version\s*=\s*"([^"]+)"/m);
-  if (!match) throw new Error('could not read version from [workspace.package]');
-  return match[1];
-}
 
 /// Locates the built binary for a target.
 ///
@@ -275,7 +263,7 @@ function parseArgs(argv) {
 /// `release.yml` applies to the tag, enforced here so neither can be skipped
 /// on its own.
 function resolveVersion(override) {
-  const manifest = workspaceVersion();
+  const manifest = workspaceVersion(ROOT);
   if (!override) return manifest;
 
   const base = override.split('-')[0];
@@ -292,23 +280,22 @@ function main() {
   const { artifacts, out, version: override } = parseArgs(process.argv.slice(2));
   const version = resolveVersion(override);
 
-  fs.rmSync(out, { recursive: true, force: true });
-
-  const built = [];
+  // Discovery first, and nothing written yet. Everything below that can throw
+  // does so before the output directory is touched, so a run that fails on a
+  // mistyped `--version` or an incomplete artifacts directory leaves the last
+  // good build intact instead of clearing it and then refusing to replace it.
+  const found = [];
   const missing = [];
 
   for (const target of TARGETS) {
     if (!target.released) continue;
 
     const binary = findBinary(target, version, artifacts);
-    if (!binary) {
-      missing.push(target.triple);
-      continue;
-    }
-    built.push({ target, ...emitPlatformPackage(target, version, out, binary) });
+    if (binary) found.push({ target, binary });
+    else missing.push(target.triple);
   }
 
-  if (built.length === 0) {
+  if (found.length === 0) {
     throw new Error(
       artifacts
         ? `no release archives found in ${artifacts}`
@@ -316,15 +303,19 @@ function main() {
     );
   }
 
-  // Checked before the launcher is written, not after. A partial build is
-  // legitimate locally and never legitimate in CI, where a launcher whose
-  // optionalDependencies omit a platform is a silent regression: that platform
-  // installs cleanly and then cannot run. Failing here means no such launcher
-  // exists on disk for a later step to find and publish.
+  // A partial build is legitimate locally and never legitimate in CI, where a
+  // launcher whose optionalDependencies omit a platform is a silent
+  // regression: that platform installs cleanly and then cannot run.
   if (missing.length > 0 && artifacts) {
     throw new Error(`refusing to build an incomplete release. missing: ${missing.join(', ')}`);
   }
 
+  fs.rmSync(out, { recursive: true, force: true });
+
+  const built = found.map(({ target, binary }) => ({
+    target,
+    ...emitPlatformPackage(target, version, out, binary),
+  }));
   const main = emitMainPackage(version, out, built);
 
   console.log(`kosong ${version} → ${path.relative(process.cwd(), out)}\n`);
