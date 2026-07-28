@@ -1,9 +1,15 @@
 //! Git, for the site folder's history.
 //!
-//! §12.2 permits `git` "initialized and called by `site init/publish` with
-//! known file paths only". So there is no variant that stages everything: the
-//! paths come from the template's own manifest, and a file the user dropped
-//! into the folder is never committed by accident.
+//! §12.2 names the permitted operations one by one — `init`, `status`,
+//! `rev-parse`, `config --get`, `ls-files`, `add`, `commit --only`, `push` —
+//! and requires `git` be "called by `site init/publish` with known file paths
+//! only". So there is no variant that stages everything: the paths come from
+//! the template's own manifest, and a file the user dropped into the folder is
+//! never committed by accident.
+//!
+//! It used to describe that set rather than list it, which is how the list grew
+//! to eight without the document noticing. Adding a variant here means adding a
+//! row there.
 //!
 //! Several variants only ask git a question. They are held to the same rule —
 //! a fixed subcommand, and where paths are involved, the same manifest list the
