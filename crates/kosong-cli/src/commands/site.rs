@@ -247,11 +247,30 @@ fn start_repository(context: &Context, site_root: &Utf8Path, approval: Approval)
 ///
 /// Both were run and observed rather than inferred from the documentation.
 ///
-/// The cost is that a *tracked* file the user deleted is no longer staged as a
-/// deletion, since it fails the same existence test. Recovering that would mean
-/// asking git what it tracks — a new operation, and §12.2 keeps that list
-/// short — to serve a state that stops the publish at `npm install` or the
-/// build well before any commit is reached.
+/// # Known gap: a tracked file the user deleted
+///
+/// A deleted path fails the existence test, so its deletion is no longer
+/// staged — where `git add` alone would have recorded it. Most owned paths stop
+/// the publish before that matters, and each was checked rather than assumed:
+/// deleting `package.json` fails `npm install`, deleting `src/pages/index.astro`
+/// leaves an empty build that step 5 refuses, `src/content` is rewritten every
+/// publish, and npm recreates the lockfile. Deleting `.gitignore` refuses too,
+/// though only indirectly: git stops ignoring `.kosong/` and `dist/`, neither of
+/// which is owned, so step 2 rejects them as changes kosong did not make.
+///
+/// `astro.config.mjs` is the one that gets through. Astro builds without it, so
+/// the publish succeeds and git keeps a file the folder no longer has. Narrow —
+/// it takes deleting a template file by hand — but real, and worth saying
+/// plainly rather than filed under a cost that sounds theoretical.
+///
+/// Closing it means distinguishing "absent and untracked", which must be
+/// filtered, from "tracked and deleted", which must not. Existence cannot tell
+/// them apart; only git can, and asking it means either a new operation (§12.2
+/// keeps that list short) or threading `git status` from `refuse_on_unrelated_
+/// changes` into a helper that `site init` also calls, where nothing is tracked
+/// yet and the answer is always "filter it". Both are a design change rather
+/// than a filter, so neither belongs in the commit that stops every second
+/// publish from failing.
 ///
 /// The result is never empty in practice: `prepare_content` writes
 /// `src/content` before either caller runs, and `atomic_write` creates the
