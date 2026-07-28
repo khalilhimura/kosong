@@ -44,6 +44,63 @@ const EXEC_RETRY_PAUSE: Duration = Duration::from_millis(20);
 // only `publish_does_not_create_a_project_that_already_exists` noticed, on
 // Linux alone. Keep them octal.
 
+/// A git that behaves enough for the workflow, and refuses the same pathspecs
+/// the real one refuses.
+///
+/// `add` and `commit` are not permissive stubs on purpose. Real `git add` exits
+/// 128 on a pathspec matching nothing, and real `git commit --only` exits 1 on
+/// a path it does not already know — so a fake that shrugged at both would let
+/// `site init` stage `package-lock.json`, which npm does not write until the
+/// first publish, and no test here would notice until a live run did.
+///
+/// The fake's rule is "the path exists on disk", which is not git's rule for
+/// `--only` ("git knows about it") but coincides with it in this workflow: the
+/// same filtered list is staged immediately before it is committed. The exit
+/// codes and the wording are the real ones, so a failure reads the way it would
+/// in a terminal.
+///
+/// `status` reports the lockfile as untracked whenever it is there. That is the
+/// state a second publish actually finds — the fake commits nothing, so the
+/// file stays untracked forever, which is the harshest version of the case and
+/// the one that was failing live.
+const GIT: &str = r#"case "$1" in
+  status) [ -f package-lock.json ] && echo "?? package-lock.json"; exit 0 ;;
+  config) echo "tester@example.test" ;;
+  rev-parse) echo "main" ;;
+  add)
+    seen=0
+    for p in "$@"; do
+      if [ "$seen" = 1 ]; then
+        [ -e "$p" ] || { echo "fatal: pathspec '$p' did not match any files" >&2; exit 128; }
+      elif [ "$p" = "--" ]; then
+        seen=1
+      fi
+    done
+    ;;
+  commit)
+    seen=0
+    for p in "$@"; do
+      if [ "$seen" = 1 ]; then
+        [ -e "$p" ] || { echo "error: pathspec '$p' did not match any file(s) known to git" >&2; exit 1; }
+      elif [ "$p" = "--" ]; then
+        seen=1
+      fi
+    done
+    ;;
+esac"#;
+
+/// An npm that leaves behind what the real one leaves behind.
+///
+/// `install` writing `package-lock.json` is not decoration: it is the whole
+/// reason the second publish used to fail, and a fake that skipped it would
+/// make `a_second_publish_is_not_refused_over_npms_lockfile` pass no matter
+/// what `owned_paths()` said.
+const NPM: &str = r#"if [ "$1" = "install" ]; then
+  printf '{ "lockfileVersion": 3 }\n' > package-lock.json
+elif [ "$1" = "run" ] && [ "$2" = "build" ]; then
+  mkdir -p dist && echo '<!doctype html><title>fake</title>' > dist/index.html
+fi"#;
+
 /// A wrangler whose account has no projects at all.
 const WRANGLER_WITHOUT_THE_PROJECT: &str = r#"if [ "$2" = "project" ] && [ "$3" = "list" ]; then
   printf '\342\224\202 Project Name \342\224\202 Project Domains \342\224\202\n'
@@ -266,24 +323,9 @@ impl Sandbox {
     }
 
     fn install_fakes(&self) {
-        // git must behave enough for the workflow: `status --porcelain` clean,
-        // `config --get user.email` returning an identity.
-        self.fake(
-            "git",
-            r#"case "$1" in
-  status) exit 0 ;;
-  config) echo "tester@example.test" ;;
-  rev-parse) echo "main" ;;
-esac"#,
-        );
+        self.fake("git", GIT);
         self.fake("gh", r#"[ "$1" = "auth" ] && exit 0"#);
-        // npm build must produce the output the publish step checks for.
-        self.fake(
-            "npm",
-            r#"if [ "$1" = "run" ] && [ "$2" = "build" ]; then
-  mkdir -p dist && echo '<!doctype html><title>fake</title>' > dist/index.html
-fi"#,
-        );
+        self.fake("npm", NPM);
         // Answers a project list with an *empty* table, so the default case in
         // these tests is a first-time publish: the project does not exist yet.
         self.fake("wrangler", WRANGLER_WITHOUT_THE_PROJECT);
@@ -381,6 +423,41 @@ fn init_stages_only_the_files_kosong_wrote() {
 }
 
 #[test]
+fn init_does_not_stage_a_lockfile_npm_has_not_written_yet() {
+    // `package-lock.json` is owned, but `site init` runs before any
+    // `npm install`, so it is not there. Handing it to git anyway breaks the
+    // first commit twice over: `git add` exits 128 on a pathspec matching
+    // nothing, and `git commit --only` exits 1 on a path git does not know.
+    //
+    // This is the half of the fix that has nothing to do with publishing, and
+    // the half a change to `owned_paths()` alone would silently break.
+    let sandbox = Sandbox::new();
+    sandbox.run(&["new"]);
+
+    let output = sandbox.run(&["site", "init", "--yes"]);
+    assert_eq!(code(&output), 0, "stderr: {}", stderr(&output));
+
+    assert!(
+        !sandbox.site_root().join("package-lock.json").exists(),
+        "nothing in `site init` should have created a lockfile"
+    );
+
+    let log = sandbox.invocations();
+    for line in log.lines().filter(|l| l.starts_with("git add")) {
+        assert!(
+            !line.contains("package-lock.json"),
+            "staged a file that does not exist: {line}"
+        );
+    }
+    for line in log.lines().filter(|l| l.starts_with("git commit")) {
+        assert!(
+            !line.contains("package-lock.json"),
+            "committed a path git cannot know: {line}"
+        );
+    }
+}
+
+#[test]
 fn init_refuses_to_overwrite_an_existing_site() {
     let sandbox = Sandbox::new();
     sandbox.run(&["new"]);
@@ -450,6 +527,55 @@ fn publish_builds_and_deploys() {
     assert!(log.contains("npm run build"));
     assert!(log.contains("wrangler pages deploy dist"));
     assert!(log.contains("--project-name my-first-site"));
+}
+
+#[test]
+fn a_second_publish_is_not_refused_over_npms_lockfile() {
+    // Live smoke run 30335517886, found by reading a log rather than trusting a
+    // checkmark. `npm install` runs at publish step 4 and writes
+    // `package-lock.json`. The lockfile was in neither `owned_paths()` nor the
+    // template's `.gitignore`, so the *next* publish saw a file kosong had not
+    // written, called it unrelated, and refused — telling the user to commit a
+    // file kosong itself had caused to appear.
+    //
+    // The beginner path is `init` → `publish` ✓ → `edit` → `publish` ✗, and
+    // nothing here published twice, so nothing here noticed.
+    let sandbox = Sandbox::new();
+    sandbox.run(&["new", "--title", "My First Site"]);
+    sandbox.run(&["site", "init", "--yes"]);
+
+    let first = sandbox.run(&["site", "publish", "--yes"]);
+    assert_eq!(code(&first), 0, "stderr: {}", stderr(&first));
+
+    // Without this the test proves nothing at all: the refusal needs a real
+    // lockfile to trip over.
+    assert!(
+        sandbox.site_root().join("package-lock.json").is_file(),
+        "the npm fake must leave a lockfile behind, as the real one does"
+    );
+
+    let second = sandbox.run(&["site", "publish", "--yes"]);
+    assert_eq!(
+        code(&second),
+        0,
+        "the second publish was refused.\nstdout: {}\nstderr: {}",
+        stdout(&second),
+        stderr(&second)
+    );
+    assert!(
+        !stdout(&second).contains("kosong did not make"),
+        "the lockfile was read as someone else's file: {}",
+        stdout(&second)
+    );
+
+    // And it is adopted, not merely tolerated — that is what heals a site made
+    // before the lockfile was owned, with no migration.
+    let staged = sandbox
+        .invocations()
+        .lines()
+        .filter(|line| line.starts_with("git add"))
+        .any(|line| line.contains("package-lock.json"));
+    assert!(staged, "the lockfile must be committed, not just ignored");
 }
 
 #[test]
