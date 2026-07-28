@@ -92,6 +92,23 @@ jobs:
           env PATH="" "$BIN" --workspace "$WORK" doctor --json | grep -q '"healthy": true'
           env PATH="" "$BIN" --workspace "$WORK" status --json | grep -q '"valid": true'
 
+      # Runs here rather than as a job of its own so it can use the release
+      # binary the step above just built and smoke-tested, on both platforms,
+      # without a second three-minute cargo build. It is the same concern:
+      # this job produces the binary, and this checks that the binary survives
+      # being packaged.
+      #
+      # The npm layer has no type checker, no linter, and no `cargo test`.
+      # Both bugs found while writing it — a platform package whose `bin` entry
+      # shadowed the launcher, and a `spawnSync` that swallowed every signal —
+      # passed every other check in this file. `verify.mjs` names each one.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: npm packaging
+        run: node npm/verify.mjs
+
   dependencies:
     name: Dependency audit
     runs-on: ubuntu-latest
