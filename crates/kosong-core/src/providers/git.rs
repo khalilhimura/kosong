@@ -301,6 +301,7 @@ Your page is published — this only affects the copy of your history on GitHub.
 Signing in to GitHub and signing in to git are two different things, and only
 the first one is done. To connect the second, run this once:
   gh auth setup-git
+If that says you are not logged in, run `gh auth login` first, then try it again.
 Then run `kosong site publish` again to send your history up.";
 
 #[cfg(test)]
@@ -325,6 +326,25 @@ mod tests {
             "remote: Support for password authentication was removed.\n\
              fatal: Authentication failed for 'https://github.com/me/site.git/'"
         ));
+    }
+
+    #[test]
+    fn the_repair_covers_a_gh_session_that_has_since_expired() {
+        // `gh auth setup-git` refuses when no host is authenticated —
+        // "You are not logged into any GitHub hosts" — and that is reachable
+        // here. The repository is recorded at `site init`, when gh was signed
+        // in; the push that fails can be days later, when it is not. Naming
+        // only `setup-git` would strand exactly the user this message exists
+        // for, one step short.
+        assert!(PUSH_REPAIR.contains("gh auth setup-git"));
+        assert!(PUSH_REPAIR.contains("gh auth login"));
+
+        // Order matters as much as presence: `setup-git` is the usual fix, and
+        // `login` is the fallback when it refuses. Reversed, every reader is
+        // sent to re-authenticate a session that is probably fine.
+        let setup = PUSH_REPAIR.find("gh auth setup-git").expect("setup-git");
+        let login = PUSH_REPAIR.find("gh auth login").expect("login");
+        assert!(setup < login, "setup-git is the first thing to try");
     }
 
     #[test]
