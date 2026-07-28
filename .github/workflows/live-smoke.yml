@@ -94,10 +94,26 @@ jobs:
           URL="$(cat "$WORK/url")"
           test -n "$URL"
 
-          # Cloudflare needs a moment to serve a brand new deployment.
-          for _ in $(seq 1 30); do
-            curl -fsS "$URL" >/dev/null 2>&1 && break
-            sleep 5
+          # Cloudflare needs a while to serve a brand new deployment, and the
+          # wait got longer when kosong started creating the project itself.
+          # The project used to be made by hand in the dashboard, long before a
+          # run, so its `pages.dev` certificate was already issued by the time
+          # anything was deployed to it. Now the project is seconds old, and the
+          # first requests fail the TLS handshake outright rather than returning
+          # an HTTP error — which is why this waits on `curl` succeeding at all
+          # rather than on a status code.
+          #
+          # 150s was not enough: a run reached exactly that budget and then
+          # failed on `sslv3 alert handshake failure`.
+          deadline=$(( $(date +%s) + 600 ))
+          until curl -fsS "$URL" >/dev/null 2>&1; do
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::error::${URL} did not become reachable within 10 minutes."
+              echo "Last attempt said:"
+              curl -sS -o /dev/null "$URL" || true
+              exit 1
+            fi
+            sleep 10
           done
           curl -fsS "$URL" | grep -q "Live Smoke ${GITHUB_RUN_ID}"
           echo "Published and reachable at $URL"
