@@ -268,3 +268,76 @@ Run these two, with your own name and email:
   git config --global user.name \"Your Name\"
   git config --global user.email \"you@example.com\"
 Then try again.";
+
+/// Whether a failed push failed because git could not sign in.
+///
+/// Signing in to GitHub and signing in to *git* are two different things, and
+/// kosong can be in the state where only the first is done: `gh auth status`
+/// passes, so a repository is created and recorded, and then every push fails.
+/// A GitHub Actions runner is in that state by default, and so is any user who
+/// answered no when `gh auth login` offered to configure git, or who
+/// authenticated with `GH_TOKEN` alone.
+///
+/// Matched on the phrases git uses rather than on an exit code, because the
+/// code is the same 128 it returns for a bad remote. The trailing reason varies
+/// by platform — `Device not configured`, `No such device or address`,
+/// `terminal prompts disabled` — so none of those can be the thing matched.
+pub fn needs_credentials(output: &str) -> bool {
+    // `Authentication failed` covers the other half: a helper that answers with
+    // a token GitHub no longer accepts.
+    const SIGNS: [&str; 3] = [
+        "could not read Username",
+        "could not read Password",
+        "Authentication failed",
+    ];
+
+    SIGNS.iter().any(|sign| output.contains(sign))
+}
+
+/// What to tell a user whose git cannot sign in to GitHub.
+pub const PUSH_REPAIR: &str = "\
+Your page is published — this only affects the copy of your history on GitHub.
+
+Signing in to GitHub and signing in to git are two different things, and only
+the first one is done. To connect the second, run this once:
+  gh auth setup-git
+Then run `kosong site publish` again to send your history up.";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_push_with_no_credential_helper_is_recognised() {
+        // Both captured by running `git push` against an https remote with no
+        // helper and stdin closed — exactly how kosong spawns it. Which of the
+        // two trailing reasons appears depends on the platform, so neither can
+        // be the thing matched on.
+        assert!(needs_credentials(
+            "fatal: could not read Username for 'https://github.com': Device not configured"
+        ));
+        assert!(needs_credentials(
+            "fatal: could not read Username for 'https://github.com': terminal prompts disabled"
+        ));
+        // A helper that answers with a stale or wrong token fails later, and
+        // lands the user in the same place.
+        assert!(needs_credentials(
+            "remote: Support for password authentication was removed.\n\
+             fatal: Authentication failed for 'https://github.com/me/site.git/'"
+        ));
+    }
+
+    #[test]
+    fn an_ordinary_push_failure_is_not_blamed_on_credentials() {
+        // Sending someone to set up credentials when the truth is a rejected
+        // non-fast-forward costs them more time than saying nothing would.
+        assert!(!needs_credentials(
+            "! [rejected] main -> main (fetch first)\nerror: failed to push some refs"
+        ));
+        assert!(!needs_credentials(
+            "fatal: 'origin' does not appear to be a git repository"
+        ));
+        assert!(!needs_credentials("Everything up-to-date"));
+        assert!(!needs_credentials(""));
+    }
+}

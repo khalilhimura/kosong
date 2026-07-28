@@ -93,6 +93,25 @@ const GIT: &str = r#"case "$1" in
     ;;
 esac"#;
 
+/// A git whose push cannot authenticate, exactly as one with no credential
+/// helper cannot.
+///
+/// The message is captured from a real `git push` to an https remote with
+/// helpers disabled and stdin closed — which is how kosong spawns git, and the
+/// state both a GitHub Actions runner and any user who declined `gh auth
+/// login`'s git question are in. `gh` is unaffected: it supplies credentials to
+/// the git commands it runs itself, which is why `gh repo create --push`
+/// succeeds moments before this fails.
+const GIT_WHOSE_PUSH_CANNOT_AUTHENTICATE: &str = r#"case "$1" in
+  status) exit 0 ;;
+  config) echo "tester@example.test" ;;
+  rev-parse) echo "main" ;;
+  push)
+    echo "fatal: could not read Username for 'https://github.com': No such device or address" >&2
+    exit 128
+    ;;
+esac"#;
+
 /// An npm that leaves behind what the real one leaves behind.
 ///
 /// `install` writing `package-lock.json` is not decoration: it is the whole
@@ -699,6 +718,49 @@ fn publish_records_a_template_file_the_user_deleted() {
     assert!(
         !status.contains("astro.config.mjs"),
         "the deletion was left unstaged:\n{status}"
+    );
+}
+
+#[test]
+fn a_push_that_cannot_authenticate_says_why_and_how_to_fix_it() {
+    // Seen in every live smoke run so far, and reported only as
+    // `! could not send to GitHub; your page will still be published` — a
+    // sentence with no cause and no next action. git's own reason was read and
+    // thrown away, so no run could say whether the remote was wrong, the branch
+    // was behind, or, as it turned out, nothing had told git who the user was.
+    //
+    // Not CI-only, which is why this is a product test and not a workflow fix
+    // alone: `gh auth login` asks whether to set git up too, and answering no —
+    // or authenticating by `GH_TOKEN` alone — leaves `gh auth status` passing,
+    // so kosong offers GitHub and records the repository, and then every push
+    // fails exactly like this.
+    let sandbox = Sandbox::new();
+    sandbox.run(&["new", "--title", "My First Site"]);
+    // A signed-in gh, so a repository is recorded and the push is attempted.
+    sandbox.run(&["site", "init", "--yes"]);
+    sandbox.fake("git", GIT_WHOSE_PUSH_CANNOT_AUTHENTICATE);
+
+    let output = sandbox.run(&["site", "publish", "--yes"]);
+
+    // The deployment is what the user asked for; a failed push must not sink
+    // it. That part was already right and must stay right.
+    assert_eq!(code(&output), 0, "stderr: {}", stderr(&output));
+    assert!(
+        sandbox.invocations().contains("wrangler pages deploy"),
+        "the publish must still have deployed"
+    );
+
+    // Asserted on both streams together: what matters is that it reaches the
+    // user, not which pipe carries it.
+    let told = format!("{}{}", stdout(&output), stderr(&output));
+
+    assert!(
+        told.contains("could not read Username"),
+        "git's own reason must survive: {told}"
+    );
+    assert!(
+        told.contains("gh auth setup-git"),
+        "the repair must name the command that fixes it: {told}"
     );
 }
 

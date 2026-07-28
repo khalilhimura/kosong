@@ -577,6 +577,26 @@ fn commit_and_push(
                 // A failed push must not sink a publish: the built files are
                 // fine and the deployment is what the user asked for.
                 ui.warn("could not send to GitHub; your page will still be published");
+
+                // But it must still say *why*. This warning used to be the
+                // whole report, and git's own output was read and dropped —
+                // which left three live smoke runs recording a failure that
+                // none of them could explain.
+                let reason = result.combined_output();
+                ui.blank();
+                for line in reason.lines() {
+                    ui.say(format!("    {line}"));
+                }
+
+                // And where the cause is one kosong recognises, name the fix.
+                // §5.3's rule is that a failure leaves the user knowing what to
+                // do next, and "could not send to GitHub" on its own does not.
+                if git::needs_credentials(&reason) {
+                    ui.blank();
+                    for line in git::PUSH_REPAIR.lines() {
+                        ui.say(line);
+                    }
+                }
             }
         }
     }
