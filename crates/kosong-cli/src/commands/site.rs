@@ -210,7 +210,12 @@ fn start_repository(context: &Context, site_root: &Utf8Path, approval: Approval)
 
     // `package-lock.json` is owned but does not exist yet: npm writes it at
     // publish step 4, long after this runs.
-    let staged = present(site_root, site::owned_paths());
+    //
+    // The repository was created a few lines ago, so nothing is tracked and
+    // the query is asked only to be told so. It is asked anyway rather than
+    // assumed: `stageable` is one rule, applied the same way by both callers,
+    // and the cost of confirming it here is one read-only invocation.
+    let staged = stageable(ui, site_root, site::owned_paths(), approval)?;
 
     perform_checked(ui, &GitOperation::add(staged.clone()), site_root, approval)?;
     perform_checked(
@@ -227,13 +232,13 @@ fn start_repository(context: &Context, site_root: &Utf8Path, approval: Approval)
     Ok(())
 }
 
-/// The owned paths that are actually present in `site_root`.
+/// The owned paths git will accept: those on disk, plus those it still tracks.
 ///
 /// [`site::owned_paths`] names what belongs to the site, which is not the same
-/// as what is on disk right now — `package-lock.json` is ours from the moment
-/// npm writes it, and absent for the whole of `site init`. Both git operations
-/// that receive the list refuse a path they cannot find, in different ways and
-/// with different exit codes:
+/// as what git can be handed right now — `package-lock.json` is ours from the
+/// moment npm writes it, and absent for the whole of `site init`. Both
+/// operations that receive the list refuse a path they cannot match, in
+/// different ways and with different exit codes:
 ///
 /// - `git add -- missing.txt` exits **128** with
 ///   `fatal: pathspec 'missing.txt' did not match any files`. There is no
@@ -247,40 +252,73 @@ fn start_repository(context: &Context, site_root: &Utf8Path, approval: Approval)
 ///
 /// Both were run and observed rather than inferred from the documentation.
 ///
-/// # Known gap: a tracked file the user deleted
+/// # Why existence alone was not the test
 ///
-/// A deleted path fails the existence test, so its deletion is no longer
-/// staged — where `git add` alone would have recorded it. Most owned paths stop
-/// the publish before that matters, and each was checked rather than assumed:
-/// deleting `package.json` fails `npm install`, deleting `src/pages/index.astro`
-/// leaves an empty build that step 5 refuses, `src/content` is rewritten every
-/// publish, and npm recreates the lockfile. Deleting `.gitignore` refuses too,
-/// though only indirectly: git stops ignoring `.kosong/` and `dist/`, neither of
-/// which is owned, so step 2 rejects them as changes kosong did not make.
+/// A file the user deleted is absent from the folder and still in git's index,
+/// and those two facts pull opposite ways: absent says "filter it, or `add`
+/// exits 128", tracked says "keep it, or the deletion is never staged and the
+/// history stops matching the folder". Filtering on existence answered only the
+/// first, so deleting `astro.config.mjs` and publishing exited 0 with git still
+/// holding a file the folder no longer had — a regression from the plain
+/// `git add` that came before, which staged the deletion.
 ///
-/// `astro.config.mjs` is the one that gets through. Astro builds without it, so
-/// the publish succeeds and git keeps a file the folder no longer has. Narrow —
-/// it takes deleting a template file by hand — but real, and worth saying
-/// plainly rather than filed under a cost that sounds theoretical.
+/// Most owned paths never got that far, and each was checked rather than
+/// assumed: deleting `package.json` fails `npm install`, deleting
+/// `src/pages/index.astro` leaves an empty build that step 5 refuses,
+/// `src/content` is rewritten every publish, and npm recreates the lockfile.
+/// Deleting `.gitignore` refuses too, though only indirectly: git stops
+/// ignoring `.kosong/` and `dist/`, neither of which is owned, so step 2
+/// rejects them as changes kosong did not make. `astro.config.mjs` was the one
+/// that got through, because Astro builds without it.
 ///
-/// Closing it means distinguishing "absent and untracked", which must be
-/// filtered, from "tracked and deleted", which must not. Existence cannot tell
-/// them apart; only git can, and asking it means either a new operation (§12.2
-/// keeps that list short) or threading `git status` from `refuse_on_unrelated_
-/// changes` into a helper that `site init` also calls, where nothing is tracked
-/// yet and the answer is always "filter it". Both are a design change rather
-/// than a filter, so neither belongs in the commit that stops every second
-/// publish from failing.
+/// # Why a new operation, against §12.2's short list
+///
+/// Only git can tell "absent and untracked" from "tracked and deleted", so the
+/// question is which way of asking. `git status --porcelain` is already
+/// fetched, by `refuse_on_unrelated_changes`, and threading it here was the
+/// alternative. It was not taken: that snapshot is read at publish step 2 and
+/// would be used at step 6, with `npm install` and a full build in between, and
+/// it would leave `start_repository` passing "nothing is tracked" on an
+/// invariant enforced by nothing. `ls-files` is asked where the answer is used,
+/// by both callers, with no snapshot to go stale.
+///
+/// That leaves §12.2, which is short on purpose. What it is short *about* is
+/// authority: the allowlist is a closed enum precisely so no caller can smuggle
+/// a subcommand through, and `Status`, `CurrentBranch`, and `IdentityCheck` are
+/// already there because kosong asks git rather than guessing. `ls-files` joins
+/// them on the same terms — a fixed subcommand, read-only, handed the same
+/// manifest paths `add` and `commit` get, revealing nothing a user running
+/// `git status` in their own folder could not see. It widens what kosong knows,
+/// not what it may do.
 ///
 /// The result is never empty in practice: `prepare_content` writes
 /// `src/content` before either caller runs, and `atomic_write` creates the
 /// directories on the way. That matters, because `git commit --only` with no
 /// paths at all is itself a fatal error rather than a no-op.
-fn present(site_root: &Utf8Path, paths: Vec<Utf8PathBuf>) -> Vec<Utf8PathBuf> {
-    paths
+fn stageable(
+    ui: Ui,
+    site_root: &Utf8Path,
+    paths: Vec<Utf8PathBuf>,
+    approval: Approval,
+) -> CliResult<Vec<Utf8PathBuf>> {
+    // A failed query is not an error: `site init --dry-run` plans a `git init`
+    // that never runs, so this asks a folder that is not a repository yet, and
+    // git exits 128. "Nothing is tracked" is the true answer there, and it is
+    // also the old behaviour — filter on existence alone.
+    let tracked = perform(
+        ui,
+        &GitOperation::list_tracked(paths.clone()),
+        site_root,
+        approval,
+    )?
+    .filter(|result| result.success())
+    .map(|result| result.stdout)
+    .unwrap_or_default();
+
+    Ok(paths
         .into_iter()
-        .filter(|path| site_root.join(path).exists())
-        .collect()
+        .filter(|path| site_root.join(path).exists() || git::tracks(&tracked, path))
+        .collect())
 }
 
 /// Offers to create a GitHub repository. Declining is fine.
@@ -507,7 +545,11 @@ fn commit_and_push(
     // By now `npm install` has run, so the lockfile is here and is committed
     // along with everything else. That is what adopts the stray lockfile in a
     // site created before it was owned: no migration, just the next publish.
-    let staged = present(site_root, site::owned_paths());
+    //
+    // Asked here, immediately before staging, rather than reusing the status
+    // step 2 already read: the build and the install have run since, and a
+    // deletion has to be true now, not five minutes ago.
+    let staged = stageable(ui, site_root, site::owned_paths(), approval)?;
 
     perform(ui, &GitOperation::add(staged.clone()), site_root, approval)?;
 

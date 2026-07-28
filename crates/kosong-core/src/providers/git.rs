@@ -4,9 +4,13 @@
 //! known file paths only". So there is no variant that stages everything: the
 //! paths come from the template's own manifest, and a file the user dropped
 //! into the folder is never committed by accident.
+//!
+//! Several variants only ask git a question. They are held to the same rule —
+//! a fixed subcommand, and where paths are involved, the same manifest list the
+//! mutating variants get.
 
 use super::{Operation, ProviderError, validate_name};
-use camino::Utf8PathBuf;
+use camino::{Utf8Path, Utf8PathBuf};
 
 /// The executable. Fixed, never derived from input.
 pub const PROGRAM: &str = "git";
@@ -30,6 +34,13 @@ pub enum GitOperation {
     /// with a message that baffles a beginner.
     IdentityCheck,
 
+    /// Which of these paths git already has in its index.
+    ///
+    /// Read-only, and the answer existence on disk cannot give: a file the
+    /// user deleted is gone from the folder but still tracked, and staging
+    /// that deletion is the only way the history keeps up with the folder.
+    ListTracked { paths: Vec<Utf8PathBuf> },
+
     /// Stage an explicit list of paths. Never `.`, never `-A`.
     Add { paths: Vec<Utf8PathBuf> },
 
@@ -50,6 +61,10 @@ pub enum GitOperation {
 impl GitOperation {
     pub fn add(paths: Vec<Utf8PathBuf>) -> Self {
         Self::Add { paths }
+    }
+
+    pub fn list_tracked(paths: Vec<Utf8PathBuf>) -> Self {
+        Self::ListTracked { paths }
     }
 
     pub fn push(remote: &str, branch: &str) -> Result<Self, ProviderError> {
@@ -84,6 +99,15 @@ impl Operation for GitOperation {
 
             Self::IdentityCheck => vec!["config".into(), "--get".into(), "user.email".into()],
 
+            Self::ListTracked { paths } => {
+                // No `--error-unmatch`: a path git has never heard of is the
+                // expected answer here, not a failure. Without that flag
+                // `ls-files` exits 0 and simply says nothing about it.
+                let mut args = vec!["ls-files".into(), "--".into()];
+                args.extend(paths.iter().map(ToString::to_string));
+                args
+            }
+
             Self::Add { paths } => {
                 let mut args = vec!["add".into(), "--".into()];
                 // `--` ends option parsing, so a path beginning with a hyphen
@@ -114,7 +138,9 @@ impl Operation for GitOperation {
 
     fn mutating(&self) -> bool {
         match self {
-            Self::Status | Self::CurrentBranch | Self::IdentityCheck => false,
+            Self::Status | Self::CurrentBranch | Self::IdentityCheck | Self::ListTracked { .. } => {
+                false
+            }
             Self::Init | Self::Add { .. } | Self::Commit { .. } | Self::Push { .. } => true,
         }
     }
@@ -125,6 +151,9 @@ impl Operation for GitOperation {
             Self::Status => "Check for unsaved changes.".into(),
             Self::CurrentBranch => "Check which branch this is.".into(),
             Self::IdentityCheck => "Check that git knows who you are.".into(),
+            Self::ListTracked { paths } => {
+                format!("Check which of {} file(s) git already tracks.", paths.len())
+            }
             Self::Add { paths } => format!("Stage {} file(s).", paths.len()),
             Self::Commit { paths, .. } => {
                 format!("Record {} file(s) in this folder's history.", paths.len())
@@ -204,6 +233,27 @@ pub fn unrelated_changes(output: &str, owned: &[Utf8PathBuf]) -> Vec<Change> {
                 .any(|path| change.path == *path || change.path.starts_with(&format!("{path}/")))
         })
         .collect()
+}
+
+/// Whether [`GitOperation::ListTracked`] listed `path`, or anything inside it.
+///
+/// An owned path may name a directory — `src/content` — which `ls-files`
+/// answers with the files under it rather than with the directory, so a prefix
+/// counts. That is the same rule [`unrelated_changes`] applies, for the same
+/// reason.
+///
+/// `ls-files` quotes any path holding a byte outside ASCII, per
+/// `core.quotePath`. Every owned path is ASCII, so quoting can only ever wrap a
+/// name *underneath* one — and the leading `src/content/` a prefix match needs
+/// survives inside the quotes intact.
+pub fn tracks(listed: &str, path: &Utf8Path) -> bool {
+    let path = path.as_str();
+    let prefix = format!("{path}/");
+
+    listed.lines().any(|line| {
+        let line = line.trim_matches('"');
+        line == path || line.starts_with(&prefix)
+    })
 }
 
 /// Whether `git config user.email` produced a usable identity.
