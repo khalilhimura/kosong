@@ -966,3 +966,64 @@ fn a_create_result_is_read_for_which_kind_of_failure_it_was() {
         "killed by a signal is a failure, not a collision"
     );
 }
+
+/// Ground truth for the `NameTaken` marker, which went six live smoke runs
+/// without one.
+///
+/// Captured by provoking a real collision against Wrangler 4.114.0 — create a
+/// throwaway Pages project, create it a second time, delete it — because every
+/// other name on the development account is a live site, which is exactly why
+/// this had never been done. The fixture below is what wrangler wrote to
+/// stderr, byte for byte, with two substitutions: the account id and the log
+/// path, neither of which belongs in a public repository and neither of which
+/// the match depends on.
+///
+/// The escape codes are kept. They are the reason this test cannot be written
+/// from the source: `contains` survives them only because they fall outside the
+/// matched sentence, and nothing but a real capture shows where wrangler puts
+/// them.
+#[test]
+fn a_real_wrangler_collision_is_read_as_a_taken_name() {
+    use kosong_core::process::redact;
+    use kosong_core::providers::cloudflare::{ProjectCreateOutcome, interpret_project_create};
+
+    let stderr = "\u{1b}[31m✘ \u{1b}[41;31m[\u{1b}[41;97mERROR\u{1b}[41;31m]\u{1b}[0m \u{1b}[1mA request to the Cloudflare API (/accounts/0123456789abcdef0123456789abcdef/pages/projects) failed.\u{1b}[0m\n\n  A project with this name already exists. Choose a different project name. [code: 8000002]\n  \n  If you think this is a bug, please open an issue at: \u{1b}[4mhttps://github.com/cloudflare/workers-sdk/issues/new/choose\u{1b}[0m\n\n\n🪵  Logs were written to \"/tmp/.wrangler/logs/wrangler-2026-07-28_18-32-30_718.log\"\n";
+
+    assert_eq!(
+        interpret_project_create(Some(1), stderr),
+        ProjectCreateOutcome::NameTaken,
+        "the real collision message must be recognised"
+    );
+
+    // The two markers must each carry the verdict alone. Cloudflare is free to
+    // reword the sentence, and a future wrangler is free to stop printing the
+    // code; neither should silently turn a collision back into a bare failure.
+    assert_eq!(
+        interpret_project_create(Some(1), "failed. [code: 8000002]"),
+        ProjectCreateOutcome::NameTaken,
+        "the API error code alone must be enough"
+    );
+    assert_eq!(
+        interpret_project_create(Some(1), "A project with this name already exists."),
+        ProjectCreateOutcome::NameTaken,
+        "the prose alone must be enough"
+    );
+
+    // 8000003 is the *other* code this same call returns — a name Cloudflare
+    // will not accept. Reading it as a collision would send the user to rename
+    // a project over what is really a charset problem.
+    assert_eq!(
+        interpret_project_create(Some(1), "Validation error [code: 8000003]"),
+        ProjectCreateOutcome::Failed,
+        "an invalid name is not a taken name"
+    );
+
+    // The lesson of the `xoxo-blog` bug: this output is parsed, not just shown,
+    // so redaction runs before the matcher ever sees it. A rule that blanked
+    // the message would turn a collision into a confusing failure again.
+    assert_eq!(
+        interpret_project_create(Some(1), &redact(stderr)),
+        ProjectCreateOutcome::NameTaken,
+        "the message must survive redaction on its way out of the adapter"
+    );
+}

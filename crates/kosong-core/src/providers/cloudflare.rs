@@ -319,6 +319,12 @@ impl AuthState {
     }
 }
 
+/// Cloudflare's own number for "a project with this name already exists",
+/// observed in a real collision against Wrangler 4.114.0. Matched in the
+/// bracketed form wrangler prints, so a bare `8000002` elsewhere in the output
+/// cannot pass for it.
+const NAME_TAKEN_CODE: &str = "[code: 8000002]";
+
 /// What `wrangler pages project create` did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProjectCreateOutcome {
@@ -334,14 +340,36 @@ pub enum ProjectCreateOutcome {
 /// on it — the repair names where to change the name — whereas an auth or
 /// network failure is wrangler's to explain.
 ///
-/// # The `NameTaken` marker is not verified
+/// # The `NameTaken` marker, verified against a real collision
 ///
-/// Triggering a real collision requires attempting a create against a name
-/// that already exists, and every name on the account this was developed
-/// against is a live site. So the match is deliberately broad, and anything it
-/// misses falls through to [`ProjectCreateOutcome::Failed`], which reports
-/// wrangler's own output — the same behaviour as before this existed. Do not
-/// describe it as verified until a real collision has been observed.
+/// This went unverified through six live smoke runs, because none of them ever
+/// collided and every other name on the development account is a live site. It
+/// was settled by provoking one deliberately against Wrangler 4.114.0: create a
+/// throwaway project, create it again, delete it. What wrangler actually says,
+/// on **stderr**, with exit code 1:
+///
+/// ```text
+/// ✘ [ERROR] A request to the Cloudflare API (/accounts/<id>/pages/projects) failed.
+///
+///   A project with this name already exists. Choose a different project name. [code: 8000002]
+/// ```
+///
+/// Three things that reading the source could not have told us, all pinned by
+/// `a_real_wrangler_collision_is_read_as_a_taken_name`:
+///
+/// - It arrives on stderr, not stdout. [`super::super::process::CommandResult::combined_output`]
+///   puts stderr first, so the phrase reaches this function — but a caller that
+///   passed only stdout would see an empty string and read `Failed`.
+/// - The line is wrapped in ANSI colour codes. They fall outside the matched
+///   phrase, so `contains` still works; had wrangler emphasised a word inside
+///   the sentence, it would not.
+/// - Cloudflare numbers it `8000002`. That is the stable identifier — the prose
+///   around it is free to be reworded, and the same call renders `8000003` for a
+///   name Cloudflare will not accept (see [`validate_project_name`]). It is
+///   matched as well as the prose, so either alone is enough.
+///
+/// The match stays deliberately broad. Anything it misses still falls through to
+/// [`ProjectCreateOutcome::Failed`], which reports wrangler's own output.
 ///
 /// # Why the text is checked before the exit code
 ///
@@ -356,7 +384,8 @@ pub enum ProjectCreateOutcome {
 /// create whose output happens to contain "already exists" — is not a
 /// message wrangler produces.
 pub fn interpret_project_create(exit_code: Option<i32>, output: &str) -> ProjectCreateOutcome {
-    if output.to_ascii_lowercase().contains("already exists") {
+    let lowered = output.to_ascii_lowercase();
+    if lowered.contains("already exists") || lowered.contains(NAME_TAKEN_CODE) {
         return ProjectCreateOutcome::NameTaken;
     }
     if exit_code == Some(0) {
