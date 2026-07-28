@@ -28,6 +28,9 @@ pub enum ProviderError {
 
     #[error("`{name}` is too long for a {kind} name (limit {MAX_NAME_LENGTH})")]
     NameTooLong { kind: &'static str, name: String },
+
+    #[error("`{name}` is not a usable Cloudflare project name")]
+    InvalidProjectName { name: String },
 }
 
 impl ProviderError {
@@ -42,6 +45,12 @@ impl ProviderError {
             Self::NameTooLong { kind, .. } => {
                 format!("Shorten the {kind} name to {MAX_NAME_LENGTH} characters or fewer.")
             }
+            Self::InvalidProjectName { .. } => "Cloudflare project names use lowercase letters, \
+                 numbers, and hyphens only — no capitals and no underscores — and must start and \
+                 end with a letter or number. Try something like `my-first-site`.\n\
+                 Change it in `.kosong/site.toml`, or run `kosong site init` again with a \
+                 different name."
+                .into(),
         }
     }
 }

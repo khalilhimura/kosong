@@ -34,6 +34,52 @@ const EXEC_ATTEMPTS: usize = 10;
 /// genuine failure is still reported promptly.
 const EXEC_RETRY_PAUSE: Duration = Duration::from_millis(20);
 
+/// A wrangler whose account has no projects at all.
+const WRANGLER_WITHOUT_THE_PROJECT: &str = r#"if [ "$2" = "project" ] && [ "$3" = "list" ]; then
+  printf '\xe2\x94\x82 Project Name \xe2\x94\x82 Project Domains \xe2\x94\x82\n'
+elif [ "$2" = "deploy" ]; then
+  echo "Deployment complete! Take a peek over at https://abc123.my-first-site.pages.dev"
+fi"#;
+
+/// A wrangler whose account already holds `my-first-site`.
+const WRANGLER_WITH_THE_PROJECT: &str = r#"if [ "$2" = "project" ] && [ "$3" = "list" ]; then
+  printf '\xe2\x94\x82 Project Name \xe2\x94\x82 Project Domains \xe2\x94\x82\n'
+  printf '\xe2\x94\x82 my-first-site \xe2\x94\x82 my-first-site.pages.dev \xe2\x94\x82\n'
+elif [ "$2" = "deploy" ]; then
+  echo "Deployment complete! Take a peek over at https://abc123.my-first-site.pages.dev"
+fi"#;
+
+/// A wrangler whose project list fails while everything else would work.
+///
+/// Deliberately not a wrangler that fails everything. That version let
+/// `publish_stops_when_the_project_list_cannot_be_read` pass for the wrong
+/// reason: the deploy's own failure satisfied the exit code and the stderr
+/// assertion even when a failed list was being ignored completely. Failing
+/// only the list means every way of mishandling it — ignoring it, reading it
+/// as absence, reading it as presence — ends in a publish that succeeds, so
+/// each assertion in that test has something real to catch.
+const WRANGLER_WHOSE_LIST_ALONE_FAILS: &str = r#"if [ "$2" = "project" ] && [ "$3" = "list" ]; then
+  echo "Authentication error [code: 10000]" >&2
+  exit 1
+elif [ "$2" = "deploy" ]; then
+  echo "Deployment complete! Take a peek over at https://abc123.my-first-site.pages.dev"
+fi"#;
+
+/// A wrangler whose account holds `my-first-site` under someone else's name,
+/// so the list does not show it but the create collides with it.
+///
+/// Contrived on purpose. Cloudflare project names are unique per account, and
+/// the state this reproduces — absent from the list, present on the create —
+/// is what a race or a stale list actually looks like from kosong's side.
+const WRANGLER_WHOSE_CREATE_COLLIDES: &str = r#"if [ "$2" = "project" ] && [ "$3" = "list" ]; then
+  printf '\xe2\x94\x82 Project Name \xe2\x94\x82 Project Domains \xe2\x94\x82\n'
+elif [ "$2" = "project" ] && [ "$3" = "create" ]; then
+  echo "A project with this name already exists" >&2
+  exit 1
+elif [ "$2" = "deploy" ]; then
+  echo "Deployment complete! Take a peek over at https://abc123.my-first-site.pages.dev"
+fi"#;
+
 /// Runs `attempt`, retrying only while it fails with `ETXTBSY`.
 ///
 /// Tests run on parallel threads, and glibc's `posix_spawn` clones a child
@@ -228,10 +274,9 @@ esac"#,
   mkdir -p dist && echo '<!doctype html><title>fake</title>' > dist/index.html
 fi"#,
         );
-        self.fake(
-            "wrangler",
-            r#"echo "Deployment complete! Take a peek over at https://abc123.my-first-site.pages.dev""#,
-        );
+        // Answers a project list with an *empty* table, so the default case in
+        // these tests is a first-time publish: the project does not exist yet.
+        self.fake("wrangler", WRANGLER_WITHOUT_THE_PROJECT);
     }
 
     fn run(&self, args: &[&str]) -> Output {
@@ -518,6 +563,207 @@ fn publish_without_a_site_explains_how_to_make_one() {
     assert!(stderr(&output).contains("site init"));
 }
 
+#[test]
+fn publish_creates_the_project_when_it_does_not_exist_yet() {
+    // The bug this fixes: `wrangler pages deploy` fails outright when the
+    // project is absent, naming a command kosong did not offer. A first-time
+    // publish could not succeed.
+    let sandbox = Sandbox::new();
+    sandbox.run(&["new", "--title", "My First Site"]);
+    sandbox.run(&["site", "init", "--yes"]);
+
+    let output = sandbox.run(&["site", "publish", "--yes"]);
+    assert_eq!(code(&output), 0, "stderr: {}", stderr(&output));
+
+    let log = sandbox.invocations();
+    assert!(log.contains("wrangler pages project list"));
+    assert!(
+        log.contains("wrangler pages project create my-first-site --production-branch main"),
+        "exact argv, including the branch: log was\n{log}"
+    );
+
+    // Order matters: a deploy before the create is the failure we are fixing.
+    let created = log.find("pages project create").expect("a create");
+    let deployed = log.find("pages deploy").expect("a deploy");
+    assert!(
+        created < deployed,
+        "the project must exist before the deploy"
+    );
+}
+
+#[test]
+fn publish_does_not_create_a_project_that_already_exists() {
+    let sandbox = Sandbox::new();
+    sandbox.run(&["new", "--title", "My First Site"]);
+    sandbox.run(&["site", "init", "--yes"]);
+    sandbox.fake("wrangler", WRANGLER_WITH_THE_PROJECT);
+
+    let output = sandbox.run(&["site", "publish", "--yes"]);
+    assert_eq!(code(&output), 0, "stderr: {}", stderr(&output));
+
+    let log = sandbox.invocations();
+    assert!(log.contains("wrangler pages project list"));
+    assert!(
+        !log.contains("pages project create"),
+        "the project existed; creating it again would be a needless prompt"
+    );
+    assert!(log.contains("wrangler pages deploy dist"));
+}
+
+#[test]
+fn publish_stops_when_the_project_list_cannot_be_read() {
+    // A failed list is not an absent project. Treating it as absent would
+    // attempt a create that fails for the same underlying reason, and report
+    // the wrong cause: "could not create" when the truth is "you are signed
+    // out".
+    let sandbox = Sandbox::new();
+    sandbox.run(&["new", "--title", "My First Site"]);
+    sandbox.run(&["site", "init", "--yes"]);
+    // Only the list fails. Everything after it would succeed, so a publish
+    // that reaches the end is proof the failure was swallowed.
+    sandbox.fake("wrangler", WRANGLER_WHOSE_LIST_ALONE_FAILS);
+
+    let output = sandbox.run(&["site", "publish", "--yes"]);
+
+    assert_ne!(
+        code(&output),
+        0,
+        "the publish ran to completion despite not knowing whether the project exists"
+    );
+    assert!(
+        stderr(&output).contains("Authentication error"),
+        "the provider's own error must survive: {}",
+        stderr(&output)
+    );
+
+    let log = sandbox.invocations();
+    assert!(!log.contains("pages project create"), "must not guess");
+    assert!(!log.contains("pages deploy"), "must not deploy blind");
+}
+
+#[test]
+fn a_taken_project_name_stops_the_publish_and_says_where_to_change_it() {
+    // Pages project names are unique per account. Deploying anyway would put
+    // this user's files into a project that is not theirs, so a collision has
+    // to stop the publish rather than be treated as "the project exists, carry
+    // on" — which is the tempting reading, and the wrong one.
+    let sandbox = Sandbox::new();
+    sandbox.run(&["new", "--title", "My First Site"]);
+    sandbox.run(&["site", "init", "--yes"]);
+    sandbox.fake("wrangler", WRANGLER_WHOSE_CREATE_COLLIDES);
+
+    let output = sandbox.run(&["site", "publish", "--yes"]);
+
+    assert_ne!(
+        code(&output),
+        0,
+        "a collision must not be a successful publish"
+    );
+
+    let complaint = stderr(&output);
+    assert!(
+        complaint.contains("my-first-site"),
+        "the error must name the taken name: {complaint}"
+    );
+    assert!(
+        complaint.contains("site.toml") || complaint.contains("site init"),
+        "the repair must say where to change it: {complaint}"
+    );
+
+    let log = sandbox.invocations();
+    assert!(
+        log.contains("pages project create"),
+        "the create must have been attempted: {log}"
+    );
+    assert!(
+        !log.contains("pages deploy"),
+        "a taken name must never reach the deploy: {log}"
+    );
+}
+
+#[test]
+fn publish_asks_before_creating_a_project_and_stops_when_it_is_not_answered() {
+    // The create is disclosed and confirmed on its own rather than folded into
+    // the deploy's approval. There is no terminal here, so `Ui::confirm` takes
+    // its default of no — which makes this the test for that separation: the
+    // read-only list runs, and then nothing else does. If the create were ever
+    // folded into the deploy's single approval, one of the two would slip
+    // through this gate.
+    //
+    // The site is set up with a gh that is not signed in, so no GitHub remote
+    // is recorded. That matters: with one, the push would ask first and stop
+    // the publish before Cloudflare was reached at all, and this test would
+    // pass while proving nothing about the create.
+    let sandbox = Sandbox::new();
+    sandbox.run(&["new", "--title", "My First Site"]);
+    sandbox.fake("gh", "exit 1");
+    sandbox.run(&["site", "init", "--yes"]);
+
+    let output = sandbox.run(&["site", "publish"]);
+
+    assert_ne!(code(&output), 0, "an unanswered prompt is not a publish");
+
+    let log = sandbox.invocations();
+    assert!(
+        log.contains("pages project list"),
+        "the read-only check may run without asking: {log}"
+    );
+    assert!(
+        !log.contains("pages project create"),
+        "nothing may be created without an answer: {log}"
+    );
+    assert!(
+        !log.contains("pages deploy"),
+        "nothing may be deployed without an answer: {log}"
+    );
+}
+
+#[test]
+fn a_dry_run_that_cannot_read_the_project_list_fails_rather_than_guessing() {
+    // A dry run gained a way to fail that it did not have before: the list is
+    // read-only, so it runs even here, and someone signed out gets wrangler's
+    // error where they used to get a plan. That is deliberate. A plan that
+    // cannot tell whether a create belongs in it would be a guess printed as a
+    // fact, which is the same wrong answer as treating a failed list as an
+    // absent project.
+    let sandbox = Sandbox::new();
+    sandbox.run(&["new", "--title", "My First Site"]);
+    sandbox.run(&["site", "init", "--yes"]);
+    sandbox.fake("wrangler", WRANGLER_WHOSE_LIST_ALONE_FAILS);
+
+    let output = sandbox.run(&["site", "publish", "--dry-run"]);
+
+    assert_ne!(
+        code(&output),
+        0,
+        "a plan that cannot be known must not be printed"
+    );
+    assert!(
+        !sandbox.invocations().contains("pages deploy"),
+        "a dry run must never deploy, least of all a failing one"
+    );
+}
+
+#[test]
+fn a_dry_run_names_both_the_project_and_the_deploy() {
+    let sandbox = Sandbox::new();
+    sandbox.run(&["new", "--title", "My First Site"]);
+    sandbox.run(&["site", "init", "--yes"]);
+
+    let output = sandbox.run(&["site", "publish", "--dry-run"]);
+    assert_eq!(code(&output), 0, "stderr: {}", stderr(&output));
+
+    let text = stdout(&output);
+    assert!(
+        text.contains("pages project create"),
+        "the plan must name the create: {text}"
+    );
+    assert!(
+        text.contains("pages deploy"),
+        "showing the create must not swallow the deploy: {text}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Dry run
 // ---------------------------------------------------------------------------
@@ -539,7 +785,16 @@ fn a_dry_run_publish_invokes_nothing_that_changes_anything() {
     let log = sandbox.invocations();
     assert!(!log.contains("npm install"), "dry run ran npm install");
     assert!(!log.contains("npm run build"), "dry run ran a build");
-    assert!(!log.contains("wrangler"), "dry run reached wrangler");
+    // §7: read-only checks may run under a dry run — they are how the plan is
+    // built. What must never run is a mutating one.
+    assert!(
+        !log.contains("wrangler pages deploy"),
+        "dry run reached a deploy"
+    );
+    assert!(
+        !log.contains("wrangler pages project create"),
+        "dry run created a project"
+    );
     assert!(!log.contains("git commit"), "dry run made a commit");
 
     assert!(!sandbox.site_root().join("dist").exists());

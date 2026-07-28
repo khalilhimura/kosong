@@ -803,3 +803,94 @@ fn rollback_guidance_is_honest_about_what_kosong_cannot_do() {
     assert!(guidance.contains("kosong site publish"));
     assert!(guidance.to_lowercase().contains("cannot"));
 }
+
+#[test]
+fn cloudflare_rejects_names_cloudflare_itself_would_reject() {
+    // Quoted from the Cloudflare API's own rejection (code 8000003), observed
+    // against Wrangler 4.114.0: "Project names can be 1-58 lowercase
+    // characters with dashes, but cannot start/end with a dash".
+    //
+    // This matters because `site init` slugifies, so kosong's validator is the
+    // only gate on a hand-edited `.kosong/site.toml`. Without this the user
+    // gets a raw provider error naming nothing they can act on.
+    for good in ["my-site", "site2026", "a", "my-first-site"] {
+        assert!(
+            CloudflareOperation::project_create(good, Some("main")).is_ok(),
+            "`{good}` is a valid Cloudflare project name"
+        );
+    }
+
+    for bad in ["My_Site", "MySite", "my_site", "-leading", "trailing-"] {
+        assert!(
+            CloudflareOperation::project_create(bad, Some("main")).is_err(),
+            "`{bad}` must be refused before it reaches wrangler"
+        );
+    }
+}
+
+#[test]
+fn every_operation_carrying_a_project_name_applies_the_same_rule() {
+    // One account-side constraint, so all three uses must agree. A name that
+    // cannot be created also cannot be deployed to or listed.
+    assert!(CloudflareOperation::project_create("My_Site", Some("main")).is_err());
+    assert!(CloudflareOperation::deploy("My_Site", Utf8Path::new("dist"), None).is_err());
+    assert!(CloudflareOperation::deployment_list("My_Site").is_err());
+}
+
+#[test]
+fn a_refused_project_name_says_what_shape_is_wanted() {
+    let error = CloudflareOperation::project_create("My_Site", Some("main")).unwrap_err();
+    let repair = error.repair();
+
+    assert!(repair.contains("lowercase"), "repair: {repair}");
+    assert!(
+        repair.contains("site.toml"),
+        "repair must name where to fix it: {repair}"
+    );
+}
+
+#[test]
+fn a_create_result_is_read_for_which_kind_of_failure_it_was() {
+    use kosong_core::providers::cloudflare::{ProjectCreateOutcome, interpret_project_create};
+
+    assert_eq!(
+        interpret_project_create(Some(0), "✨ Successfully created the 'my-site' project."),
+        ProjectCreateOutcome::Created
+    );
+
+    // Pages project names are unique per account, so a second workspace with
+    // the same name collides. That is a different problem from a broken
+    // create, and the user can act on it.
+    assert_eq!(
+        interpret_project_create(Some(1), "A project with this name already exists"),
+        ProjectCreateOutcome::NameTaken
+    );
+    assert_eq!(
+        interpret_project_create(Some(1), "ERROR: project ALREADY EXISTS on this account"),
+        ProjectCreateOutcome::NameTaken,
+        "the match must not depend on casing"
+    );
+
+    // Pins the order the two checks run in: exit 0 alongside "already
+    // exists" text must still read as a collision, not a success. If the
+    // exit-code check ran first, this would come back `Created` instead —
+    // exactly the misread that would send kosong on to deploy into a
+    // project the user never chose. mirrors why `interpret_whoami` cannot
+    // trust the exit code alone.
+    assert_eq!(
+        interpret_project_create(Some(0), "A project with this name already exists"),
+        ProjectCreateOutcome::NameTaken,
+        "text must be checked before the exit code, or a collision could be misread as success"
+    );
+
+    // Anything unrecognised keeps wrangler's own error rather than guessing.
+    assert_eq!(
+        interpret_project_create(Some(1), "Authentication error [code: 10000]"),
+        ProjectCreateOutcome::Failed
+    );
+    assert_eq!(
+        interpret_project_create(None, ""),
+        ProjectCreateOutcome::Failed,
+        "killed by a signal is a failure, not a collision"
+    );
+}

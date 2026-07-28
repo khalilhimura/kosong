@@ -75,8 +75,7 @@ impl CliError {
         Self::new(Exit::Usage, code, message)
     }
 
-    /// Used by the provider adapters in a later phase.
-    #[allow(dead_code)]
+    /// A provider — GitHub, Cloudflare, npm, git — refused or could not run.
     pub fn provider(code: &'static str, message: impl Into<String>) -> Self {
         Self::new(Exit::Provider, code, message)
     }

@@ -6,12 +6,12 @@
 
 use super::Context;
 use super::provider::{map_process_error, map_provider_error};
-use crate::exit::{CliError, CliResult, Exit};
+use crate::exit::{CliError, CliResult};
 use crate::ui::{Mark, Ui};
 use camino::{Utf8Path, Utf8PathBuf};
 use kosong_core::process::ProcessResult;
 use kosong_core::providers::Operation;
-use kosong_core::providers::cloudflare::{self, CloudflareOperation};
+use kosong_core::providers::cloudflare::{self, CloudflareOperation, ProjectCreateOutcome};
 use kosong_core::providers::git::{self, GitOperation};
 use kosong_core::providers::github::GitHubOperation;
 use kosong_core::providers::npm::NpmOperation;
@@ -107,12 +107,10 @@ fn perform_checked(
     if result.success() {
         Ok(Some(result))
     } else {
-        Err(CliError::new(
-            Exit::Provider,
-            "TOOL_FAILED",
-            format!("`{}` failed", result.executable),
+        Err(
+            CliError::provider("TOOL_FAILED", format!("`{}` failed", result.executable))
+                .with_repair(result.combined_output()),
         )
-        .with_repair(result.combined_output()))
     }
 }
 
@@ -319,12 +317,10 @@ pub fn publish(context: &Context, approval: Approval) -> CliResult<()> {
 
     // 4. Install and build.
     if crate::tools::find_executable("npm").is_none() {
-        return Err(CliError::new(
-            Exit::Provider,
-            "NPM_MISSING",
-            "npm is needed to build your page",
-        )
-        .with_repair("Install Node.js from https://nodejs.org, then try again."));
+        return Err(
+            CliError::provider("NPM_MISSING", "npm is needed to build your page")
+                .with_repair("Install Node.js from https://nodejs.org, then try again."),
+        );
     }
 
     ui.say("Fetching what the build needs…");
@@ -349,8 +345,7 @@ pub fn publish(context: &Context, approval: Approval) -> CliResult<()> {
 
     // 7. Deploy.
     if crate::tools::find_executable("wrangler").is_none() {
-        return Err(CliError::new(
-            Exit::Provider,
+        return Err(CliError::provider(
             "WRANGLER_MISSING",
             "wrangler is needed to publish to Cloudflare",
         )
@@ -358,6 +353,8 @@ pub fn publish(context: &Context, approval: Approval) -> CliResult<()> {
     }
 
     ui.blank();
+    ensure_project_exists(ui, &state, &site_root, approval)?;
+
     let deploy =
         CloudflareOperation::deploy(state.project(), Utf8Path::new(site::BUILD_OUTPUT_DIR), None)
             .map_err(map_provider_error)?;
@@ -386,7 +383,9 @@ pub fn publish(context: &Context, approval: Approval) -> CliResult<()> {
 
     ui.blank();
     ui.lesson(
-        "Your page is now files on a web host. Nothing about it is locked to kosong:\n\
+        "A place had to exist before your files could be put in it — that is what the first \
+         step made.\n\
+         Your page is now files on a web host. Nothing about it is locked to kosong:\n\
          the folder, the git history, and the built files are all yours.",
     );
     ui.next_command("kosong status");
@@ -487,6 +486,134 @@ fn commit_and_push(
     Ok(())
 }
 
+/// Makes sure the Cloudflare Pages project exists before anything is deployed
+/// into it.
+///
+/// `wrangler pages deploy --project-name X` fails outright when `X` does not
+/// exist, and tells the user to run a command kosong does not offer. Creating
+/// it here is what makes a first publish work at all.
+///
+/// The create is disclosed and confirmed on its own rather than folded into the
+/// deploy's approval. Of the two Cloudflare steps, a first publish asks about
+/// both and every publish after asks only about the deploy — which is the
+/// intent, because the second time there is no project left to make. (That
+/// count is the Cloudflare pair alone. A site with a GitHub remote is asked
+/// about the push too, earlier, in `commit_and_push`.) Folding the create into
+/// the deploy would run a mutating remote operation with no disclosure of its
+/// own, which §12.4 does not bend on.
+fn ensure_project_exists(
+    ui: Ui,
+    state: &SiteState,
+    site_root: &Utf8Path,
+    approval: Approval,
+) -> CliResult<()> {
+    // `main` is always stated. Left unset, wrangler asks which branch is
+    // production, and kosong runs it with no terminal to answer from. It
+    // matches the branch `site init` creates.
+    //
+    // Built here, before the list, rather than at its point of use below,
+    // because constructing it is what validates the name against Cloudflare's
+    // rule — and `project_exists` documents that it is handed an
+    // already-validated name. Nothing else in `publish` has validated
+    // `state.project()` by this point: the name comes from `.kosong/site.toml`,
+    // which a user can edit, and the deploy that would have validated it is
+    // still ahead. Validating first also means an unusable name is refused
+    // before kosong says anything to Cloudflare. That saves the list and the
+    // create, and nothing more: `npm install` has already fetched from the
+    // network by now, and a site with a GitHub remote has already pushed.
+    let create = CloudflareOperation::project_create(state.project(), Some(git::DEFAULT_BRANCH))
+        .map_err(map_provider_error)?;
+
+    // A failed list is not an absent project. An auth failure, a network error,
+    // and a rate limit all look like "the name is not in the output" if only
+    // the text is consulted — and the create that followed would fail for the
+    // same reason while blaming the wrong thing. `perform_checked` stops here
+    // with wrangler's own error instead.
+    //
+    // This is also the one way a `--dry-run` can now fail, which it could not
+    // before: the list is read-only, so it runs even under a dry run, and
+    // someone signed out or offline gets wrangler's error where they used to
+    // get a plan. That cost is accepted deliberately. A dry run that cannot
+    // read the project list cannot know whether a create belongs in the plan,
+    // and printing the plan without it would be a guess presented as a fact —
+    // the same wrong answer as treating a failed list as an absent project,
+    // just delivered more politely.
+    let Some(listed) = perform_checked(
+        ui,
+        &CloudflareOperation::PagesProjectList,
+        site_root,
+        approval,
+    )?
+    else {
+        // Unreachable: `perform` returns `None` only where `--dry-run` stops a
+        // *mutating* operation, and the list is read-only. Said out loud rather
+        // than shrugged at, because the failure mode is silent: were
+        // `PagesProjectList::mutating()` ever flipped, an `Ok(())` here would
+        // skip the existence check and let the publish deploy blind, which is
+        // the one outcome this function exists to prevent.
+        return Err(CliError::internal(
+            "PROJECT_LIST_SKIPPED",
+            "the check for an existing Cloudflare project did not run",
+        )
+        .with_repair(
+            "This is a bug in kosong, not something you did. Nothing was published.\n\
+             Please report it, and mention that `site publish` skipped the project check.",
+        ));
+    };
+
+    // `stdout`, not `combined_output()`. The table is what wrangler prints on
+    // success, and `combined_output()` is documented for showing a failure: it
+    // puts stderr first, so wrangler's banner and any warning would be fed to
+    // the table parser as though they were rows. Reading the stream the answer
+    // actually arrives on is the honest version of this check.
+    //
+    // It buys no protection from redaction, which applies to stdout and stderr
+    // alike as they are read. A project whose name happens to contain a
+    // credential prefix — `redact_prefixes` matches those anywhere in a line,
+    // not only at a word boundary — is blanked out of the table either way, so
+    // kosong would try to create a project that already exists and then tell
+    // the user to rename a name that is already theirs. Narrow, and a fix
+    // belongs in the redaction rather than here.
+    if project_exists(&listed.stdout, state.project()) {
+        return Ok(());
+    }
+
+    // Returning `Ok(())` on a dry run returns to `publish`, which carries on to
+    // disclose the deploy. Returning from `publish` itself here would stop the
+    // plan after naming only half of it.
+    let Some(result) = perform(ui, &create, site_root, approval)? else {
+        return Ok(());
+    };
+
+    match cloudflare::interpret_project_create(result.exit_code, &result.combined_output()) {
+        ProjectCreateOutcome::Created => {
+            ui.status(Mark::Good, "made a place for your page", state.project());
+            Ok(())
+        }
+        // Pages project names are unique per account. Proceeding to deploy
+        // would publish into a project the user did not mean to touch.
+        ProjectCreateOutcome::NameTaken => Err(CliError::provider(
+            "PROJECT_NAME_TAKEN",
+            format!("`{}` is already taken on Cloudflare", state.project()),
+        )
+        .with_repair(format!(
+            "Cloudflare project names are unique to your account, and `{}` is in use.\n\
+             Pick another name — edit `cloudflare_project` in `.kosong/site.toml`,\n\
+             or start again with: kosong site init <another-name>",
+            state.project()
+        ))),
+        // Word for word what `perform_checked` would have produced. The create
+        // cannot go through `perform_checked`, because a taken name has to be
+        // separated out above before the generic failure is reached — so the
+        // generic failure has to be rebuilt here rather than inherited.
+        ProjectCreateOutcome::Failed => Err(CliError::provider(
+            "TOOL_FAILED",
+            format!("`{}` failed", result.executable),
+        )
+        .with_repair(result.combined_output())),
+    }
+}
+
 /// Pulls a deployment URL out of wrangler's output.
 pub fn extract_deployment_url(output: &str) -> Option<String> {
     output
@@ -494,6 +621,28 @@ pub fn extract_deployment_url(output: &str) -> Option<String> {
         .map(|word| word.trim_matches(|c: char| !c.is_ascii_graphic() || "\"'(),".contains(c)))
         .find(|word| word.starts_with("https://") && word.contains(".pages.dev"))
         .map(str::to_owned)
+}
+
+/// Whether `name` is one of the projects in `wrangler pages project list`.
+///
+/// wrangler prints a padded box-drawing table. Splitting on the cell separator
+/// and comparing the first cell exactly is the whole point: a substring test
+/// would find `kosong` inside `kosong-smoke-30270267641` and skip a create
+/// that was needed.
+///
+/// Rule lines (`├─┼─┤`) carry no separator and drop out. `name` is expected
+/// to already be a validated Cloudflare project name (lowercase, digits,
+/// hyphens — see `validate_project_name` in `kosong_core::providers::cloudflare`),
+/// which is why the header row's `Project Name` cell is not a hazard in
+/// practice: no caller can pass it.
+pub fn project_exists(output: &str, name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+    output
+        .lines()
+        .filter_map(|line| line.split('│').nth(1))
+        .any(|cell| cell.trim() == name)
 }
 
 // ---------------------------------------------------------------------------
@@ -528,8 +677,7 @@ pub fn rollback(context: &Context, approval: Approval) -> CliResult<()> {
     ui.blank();
 
     if crate::tools::find_executable("wrangler").is_none() {
-        return Err(CliError::new(
-            Exit::Provider,
+        return Err(CliError::provider(
             "WRANGLER_MISSING",
             "wrangler is needed to look up past versions",
         )
@@ -565,7 +713,7 @@ fn locate_site(workspace: &Workspace) -> CliResult<Utf8PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::extract_deployment_url;
+    use super::{extract_deployment_url, project_exists};
 
     #[test]
     fn a_deployment_url_is_found_in_wrangler_output() {
@@ -589,5 +737,46 @@ mod tests {
     fn an_unrelated_url_is_not_mistaken_for_a_deployment() {
         let output = "See https://developers.cloudflare.com/pages for help";
         assert_eq!(extract_deployment_url(output), None);
+    }
+
+    /// The real shape of `wrangler pages project list`, captured from Wrangler
+    /// 4.114.0. Names are invented; the account's own are not committed.
+    const PROJECT_TABLE: &str = "\
+ ⛅️ wrangler 4.114.0
+────────────────────
+┌─────────────────┬──────────────────────────────┬──────────────┬───────────────┐
+│ Project Name    │ Project Domains              │ Git Provider │ Last Modified │
+├─────────────────┼──────────────────────────────┼──────────────┼───────────────┤
+│ kosong          │ kosong-nwb.pages.dev         │ No           │ 6 hours ago   │
+├─────────────────┼──────────────────────────────┼──────────────┼───────────────┤
+│ my-first-site   │ my-first-site.pages.dev      │ No           │ 2 weeks ago   │
+└─────────────────┴──────────────────────────────┴──────────────┴───────────────┘";
+
+    #[test]
+    fn a_project_is_found_by_its_whole_name_not_a_substring() {
+        assert!(project_exists(PROJECT_TABLE, "kosong"));
+        assert!(project_exists(PROJECT_TABLE, "my-first-site"));
+
+        // The bug this guards: `output.contains("kosong")` is true here, so a
+        // smoke run named `kosong-smoke-30270267641` would be judged to exist
+        // and its create skipped, and the deploy would then fail with the very
+        // error this whole change removes.
+        assert!(!project_exists(PROJECT_TABLE, "kosong-smoke-30270267641"));
+        assert!(!project_exists(PROJECT_TABLE, "koson"));
+        assert!(!project_exists(PROJECT_TABLE, "my-first-site-2"));
+    }
+
+    #[test]
+    fn empty_name_or_table_finds_nothing() {
+        // The header row ("Project Name", "Project Domains") is never a match
+        // because every caller passes an already-validated Cloudflare project
+        // name (lowercase, digits, hyphens), which cannot equal the literal
+        // string "Project Name".
+        //
+        // Rule lines (├─┼─┤ etc.) have no `│` cell separator. The filter_map
+        // in project_exists splits on `│` and takes nth(1), so rule lines return
+        // None and are dropped before any comparison happens.
+        assert!(!project_exists(PROJECT_TABLE, ""));
+        assert!(!project_exists("", "kosong"));
     }
 }
