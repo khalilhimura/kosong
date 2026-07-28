@@ -75,6 +75,37 @@ pub enum CloudflareOperation {
     },
 }
 
+/// Validates a name against Cloudflare's own rule for Pages projects.
+///
+/// Quoted from the API's rejection (error code 8000003), observed against
+/// Wrangler 4.114.0: project names can be 1–58 lowercase characters with
+/// dashes, but cannot start or end with a dash.
+///
+/// Length, emptiness, and the leading/trailing rules are inherited from the
+/// shared validator, which already caps at 58 and requires the first and last
+/// character to be alphanumeric — which, given the charset below, is the same
+/// as forbidding a leading or trailing dash. Only the charset needs narrowing.
+/// The shared validator is left alone because it also serves GitHub, where `_`
+/// and uppercase are legitimate.
+///
+/// Digits are accepted even though Cloudflare's message does not mention them.
+/// They are valid in practice and `okf::slugify` emits them freely. Being
+/// looser than Cloudflare degrades to Cloudflare's own error; being stricter
+/// would reject names that work. Do not tighten this without a real rejection
+/// to quote.
+fn validate_project_name(name: &str) -> Result<String, ProviderError> {
+    let name = validate_name("project", name)?;
+
+    if name
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
+        Ok(name)
+    } else {
+        Err(ProviderError::InvalidProjectName { name })
+    }
+}
+
 impl CloudflareOperation {
     pub fn project_create(
         project: &str,
@@ -85,14 +116,14 @@ impl CloudflareOperation {
             None => None,
         };
         Ok(Self::PagesProjectCreate {
-            project: validate_name("project", project)?,
+            project: validate_project_name(project)?,
             production_branch,
         })
     }
 
     pub fn deployment_list(project: &str) -> Result<Self, ProviderError> {
         Ok(Self::PagesDeploymentList {
-            project: validate_name("project", project)?,
+            project: validate_project_name(project)?,
         })
     }
 
@@ -106,7 +137,7 @@ impl CloudflareOperation {
             None => None,
         };
         Ok(Self::PagesDeploy {
-            project: validate_name("project", project)?,
+            project: validate_project_name(project)?,
             directory: directory.to_owned(),
             branch,
         })
@@ -286,4 +317,50 @@ impl AuthState {
             ),
         }
     }
+}
+
+/// What `wrangler pages project create` did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectCreateOutcome {
+    Created,
+    /// The name is already in use on this Cloudflare account.
+    NameTaken,
+    Failed,
+}
+
+/// Reads the result of a `pages project create`.
+///
+/// A taken name is separated from any other failure because the user can act
+/// on it — the repair names where to change the name — whereas an auth or
+/// network failure is wrangler's to explain.
+///
+/// # The `NameTaken` marker is not verified
+///
+/// Triggering a real collision requires attempting a create against a name
+/// that already exists, and every name on the account this was developed
+/// against is a live site. So the match is deliberately broad, and anything it
+/// misses falls through to [`ProjectCreateOutcome::Failed`], which reports
+/// wrangler's own output — the same behaviour as before this existed. Do not
+/// describe it as verified until a real collision has been observed.
+///
+/// # Why the text is checked before the exit code
+///
+/// `interpret_whoami`, above in this same file, exists because wrangler's
+/// exit code can report success while its output says the opposite. There is
+/// no reason to assume `pages project create` is more disciplined about that
+/// than `whoami` is, and here the cost of trusting the code first is worse
+/// than a stale auth reading: a collision misread as `Created` would send
+/// `kosong` on to deploy into a Pages project the user never chose. So the
+/// output is read for "already exists" before the exit code is allowed to
+/// declare success. The false positive in the other direction — a genuine
+/// create whose output happens to contain "already exists" — is not a
+/// message wrangler produces.
+pub fn interpret_project_create(exit_code: Option<i32>, output: &str) -> ProjectCreateOutcome {
+    if output.to_ascii_lowercase().contains("already exists") {
+        return ProjectCreateOutcome::NameTaken;
+    }
+    if exit_code == Some(0) {
+        return ProjectCreateOutcome::Created;
+    }
+    ProjectCreateOutcome::Failed
 }
