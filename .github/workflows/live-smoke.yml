@@ -86,9 +86,28 @@ jobs:
           git config --global user.name "kosong smoke"
           git config --global user.email "smoke@example.invalid"
 
+          # Signing in to GitHub and signing in to git are two different things,
+          # and `gh auth status` passing says nothing about the second. Without
+          # this, `gh repo create --push` still works — gh supplies credentials
+          # to the git commands it runs itself — while kosong's own `git push`
+          # cannot read a username and fails. That is what every run before this
+          # one was reporting as `! could not send to GitHub`.
+          gh auth setup-git
+
           "$BIN" --workspace "$WORK" new --title "Live Smoke ${GITHUB_RUN_ID}"
           "$BIN" --workspace "$WORK" site init "$NAME" --yes
           "$BIN" --workspace "$WORK" site publish --yes | tee "$WORK/publish.log"
+
+          # The README promises the user ends up owning four things, and one of
+          # them is their history on GitHub. Every run so far failed to deliver
+          # it and passed anyway, because nothing here ever looked. Assert it,
+          # so the next regression is a red run rather than a warning nobody
+          # reads.
+          if ! grep -q 'sent to GitHub' "$WORK/publish.log"; then
+            echo "::error::the publish did not send the history to GitHub."
+            echo "::error::kosong now prints git's own reason — see the log above."
+            exit 1
+          fi
 
           grep -oE 'https://[a-z0-9.-]+\.pages\.dev' "$WORK/publish.log" | head -1 > "$WORK/url"
           URL="$(cat "$WORK/url")"
