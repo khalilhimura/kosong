@@ -34,17 +34,27 @@ const EXEC_ATTEMPTS: usize = 10;
 /// genuine failure is still reported promptly.
 const EXEC_RETRY_PAUSE: Duration = Duration::from_millis(20);
 
+// The cell separator wrangler draws its table with, `│` (U+2502), is written
+// as the octal escapes `\342\224\202` rather than as the character or as
+// `\xe2\x94\x82`. These fakes run under `/bin/sh`, which is dash on Debian and
+// Ubuntu, and dash's POSIX `printf` understands `\ooo` but not the `\xNN` form
+// that bash and macOS accept. The hex form was silently emitting the literal
+// text `\xe2\x94\x82` on Linux, leaving the table with no separators at all —
+// so `project_exists` found nothing, a create ran where none was needed, and
+// only `publish_does_not_create_a_project_that_already_exists` noticed, on
+// Linux alone. Keep them octal.
+
 /// A wrangler whose account has no projects at all.
 const WRANGLER_WITHOUT_THE_PROJECT: &str = r#"if [ "$2" = "project" ] && [ "$3" = "list" ]; then
-  printf '\xe2\x94\x82 Project Name \xe2\x94\x82 Project Domains \xe2\x94\x82\n'
+  printf '\342\224\202 Project Name \342\224\202 Project Domains \342\224\202\n'
 elif [ "$2" = "deploy" ]; then
   echo "Deployment complete! Take a peek over at https://abc123.my-first-site.pages.dev"
 fi"#;
 
 /// A wrangler whose account already holds `my-first-site`.
 const WRANGLER_WITH_THE_PROJECT: &str = r#"if [ "$2" = "project" ] && [ "$3" = "list" ]; then
-  printf '\xe2\x94\x82 Project Name \xe2\x94\x82 Project Domains \xe2\x94\x82\n'
-  printf '\xe2\x94\x82 my-first-site \xe2\x94\x82 my-first-site.pages.dev \xe2\x94\x82\n'
+  printf '\342\224\202 Project Name \342\224\202 Project Domains \342\224\202\n'
+  printf '\342\224\202 my-first-site \342\224\202 my-first-site.pages.dev \342\224\202\n'
 elif [ "$2" = "deploy" ]; then
   echo "Deployment complete! Take a peek over at https://abc123.my-first-site.pages.dev"
 fi"#;
@@ -72,7 +82,7 @@ fi"#;
 /// the state this reproduces — absent from the list, present on the create —
 /// is what a race or a stale list actually looks like from kosong's side.
 const WRANGLER_WHOSE_CREATE_COLLIDES: &str = r#"if [ "$2" = "project" ] && [ "$3" = "list" ]; then
-  printf '\xe2\x94\x82 Project Name \xe2\x94\x82 Project Domains \xe2\x94\x82\n'
+  printf '\342\224\202 Project Name \342\224\202 Project Domains \342\224\202\n'
 elif [ "$2" = "project" ] && [ "$3" = "create" ]; then
   echo "A project with this name already exists" >&2
   exit 1
