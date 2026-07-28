@@ -406,6 +406,78 @@ fn a_bearer_value_on_the_next_word_is_removed() {
 }
 
 #[test]
+fn slack_token_shapes_are_redacted() {
+    // Written before narrowing the Slack prefix, because it had none: `xox`
+    // was in the list and nothing anywhere asserted what it caught. A guard
+    // against loosening the rule too far while fixing what it over-caught.
+    //
+    // The bodies follow the same convention as the GitHub fixtures above —
+    // words, not digit groups. A first draft used realistic ones and GitHub's
+    // push protection rejected the commit as a Slack token, which is a fair
+    // objection to committing something shaped exactly like a credential. It
+    // also costs the test nothing: redaction keys off the prefix and then runs
+    // to the end of the credential characters, so what follows the hyphen is
+    // never examined.
+    for token in [
+        "xoxb-16CharactersOrMoreOfTokenText",
+        "xoxp-16CharactersOrMoreOfTokenText",
+        "xoxa-16CharactersOrMoreOfTokenText",
+        "xoxr-16CharactersOrMoreOfTokenText",
+        "xoxs-16CharactersOrMoreOfTokenText",
+        "xoxe-16CharactersOrMoreOfTokenText",
+        "xoxc-16CharactersOrMoreOfTokenText",
+        "xoxd-16CharactersOrMoreOfTokenText",
+    ] {
+        let output = redact(&format!("failed using {token} for auth"));
+        assert!(!output.contains(token), "`{token}` leaked: {output}");
+        assert!(output.contains(REDACTED));
+    }
+}
+
+#[test]
+fn a_name_that_merely_begins_like_a_token_is_not_one() {
+    // The bug: `xox` matched anywhere in a line, so a Cloudflare Pages project
+    // the user genuinely owns and named `xoxo-blog` was blanked out of
+    // `wrangler pages project list`. `project_exists` then could not find it,
+    // kosong tried to create a project that already existed, and told the user
+    // to rename a name that was already theirs — a repair pointing the wrong
+    // way, for a problem they did not have.
+    //
+    // `xoxo-` is not a Slack token type. Slack's are `xoxb-`, `xoxp-`, `xoxa-`,
+    // `xoxe-`, `xoxr-`, `xoxs-`, `xoxc-` and `xoxd-`, all of which stay caught
+    // above.
+    let table = "\
+│ Project Name    │ Project Domains         │
+│ xoxo-blog       │ xoxo-blog.pages.dev     │";
+
+    let output = redact(table);
+
+    assert_eq!(output, table, "an ordinary project name was redacted");
+    assert!(
+        output.contains("xoxo-blog"),
+        "the name must survive to be matched against: {output}"
+    );
+}
+
+#[test]
+fn a_credential_prefix_inside_a_word_is_not_a_credential() {
+    // The same over-matching, from the other side: the scan started at every
+    // byte, so a prefix landing mid-word took the rest of the word with it. A
+    // credential does not begin halfway through one.
+    for ordinary in [
+        "the-ghp_naming-convention",
+        "notxoxb-anything",
+        "prefixglpat-suffix",
+    ] {
+        assert_eq!(
+            redact(ordinary),
+            ordinary,
+            "`{ordinary}` was redacted mid-word"
+        );
+    }
+}
+
+#[test]
 fn ordinary_output_survives_redaction_unchanged() {
     // Over-redaction makes tool output useless while protecting nothing. A
     // commit SHA is not a secret, and blanking it would break `git` output.

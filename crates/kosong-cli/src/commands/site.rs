@@ -896,4 +896,31 @@ mod tests {
         assert!(!project_exists(PROJECT_TABLE, ""));
         assert!(!project_exists("", "kosong"));
     }
+
+    #[test]
+    fn a_project_named_like_a_token_survives_redaction_and_is_found() {
+        // The two halves joined, because the damage happened at the join and
+        // neither half could show it alone. wrangler's output is redacted on
+        // the way out of the process adapter and *then* parsed here, so a name
+        // the redaction blanked is a name this function cannot find.
+        //
+        // `xox` used to match anywhere in a line. A user who owned a Pages
+        // project called `xoxo-blog` had it replaced by `[redacted]` before
+        // this ever saw it, so kosong concluded the project was absent, tried
+        // to create one that already existed, and told them to rename a name
+        // that was already theirs.
+        let table = "\
+┌─────────────────┬──────────────────────────────┐
+│ Project Name    │ Project Domains              │
+├─────────────────┼──────────────────────────────┤
+│ xoxo-blog       │ xoxo-blog.pages.dev          │
+└─────────────────┴──────────────────────────────┘";
+
+        let seen = kosong_core::process::redact(table);
+
+        assert!(
+            project_exists(&seen, "xoxo-blog"),
+            "the project exists and must be found after redaction:\n{seen}"
+        );
+    }
 }
