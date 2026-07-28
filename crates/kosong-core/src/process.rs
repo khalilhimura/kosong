@@ -301,7 +301,7 @@ fn quote_if_needed(value: &str) -> String {
 // ---------------------------------------------------------------------------
 
 /// Prefixes that identify a credential beyond reasonable doubt.
-const SECRET_PREFIXES: [&str; 8] = [
+const SECRET_PREFIXES: [&str; 15] = [
     "ghp_",        // GitHub personal access token
     "gho_",        // GitHub OAuth token
     "ghu_",        // GitHub user-to-server token
@@ -309,7 +309,20 @@ const SECRET_PREFIXES: [&str; 8] = [
     "ghr_",        // GitHub refresh token
     "github_pat_", // GitHub fine-grained token
     "glpat-",      // GitLab
-    "xox",         // Slack
+    // Slack, spelled out by token type rather than as the three-character
+    // `xox` this used to be. `xox` is a prefix of `xoxo`, which is an ordinary
+    // thing to call a blog, and a Pages project named `xoxo-blog` was being
+    // blanked out of `wrangler pages project list` as a result. Every Slack
+    // token type carries the trailing letter and hyphen, so naming them costs
+    // nothing and stops the collision at its source.
+    "xoxa-",
+    "xoxb-",
+    "xoxc-",
+    "xoxd-",
+    "xoxe-",
+    "xoxp-",
+    "xoxr-",
+    "xoxs-",
 ];
 
 /// Keys whose value is a credential, in `key=value` or `key: value` form.
@@ -363,15 +376,35 @@ fn is_secret_char(c: char) -> bool {
 /// Replaces anything starting with a known credential prefix.
 ///
 /// Scans the whole string rather than whitespace-separated words, so a token
-/// embedded in JSON such as `{"token":"ghp_..."}` is still caught.
+/// embedded in JSON such as `{"token":"ghp_..."}` is still caught. Punctuation
+/// is what makes that work: `"`, `=`, `:` and whitespace all end a word, so a
+/// credential wrapped in any of them still begins one.
+///
+/// # A credential begins a word
+///
+/// The scan starts at every byte, so without a boundary check a prefix landing
+/// mid-word took the rest of the word with it — `the-ghp_naming-convention`
+/// became `the-[redacted]`. Over-redaction is not a safe failure here: this
+/// output is parsed as well as displayed, and `project_exists` reading a
+/// blanked-out project name concludes the project is absent and has kosong
+/// create one that already exists.
 fn redact_prefixes(text: &str) -> String {
     let lowered = text.to_ascii_lowercase();
     let mut output = String::with_capacity(text.len());
     let mut index = 0;
 
     while index < text.len() {
+        // `index` is always a character boundary: the no-match arm below
+        // advances by whole characters, and a prefix is only ever consumed
+        // together with the credential body after it.
+        let begins_a_word = text[..index]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !is_secret_char(c));
+
         let matched = SECRET_PREFIXES
             .iter()
+            .filter(|_| begins_a_word)
             .find(|prefix| lowered[index..].starts_with(*prefix));
 
         match matched {
