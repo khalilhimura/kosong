@@ -35,6 +35,9 @@ jobs:
   install:
     name: ${{ matrix.label }}
     runs-on: ${{ matrix.os }}
+    # Empty for everything but the musl rows, which need an Alpine container
+    # because GitHub has no musl runner.
+    container: ${{ matrix.container || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -55,9 +58,23 @@ jobs:
           # execute, and continuing to publish it is a decision to make then
           # rather than discover.
           - { os: macos-15-intel,   label: darwin-x64 }
+          # musl has no GitHub runner, so it runs in an Alpine container. This
+          # is the only place the musl packages are ever executed — everything
+          # else proves they are statically linked, not that a musl system is
+          # happy with them.
+          - { os: ubuntu-latest,    label: linux-x64-musl,   container: "alpine:3" }
+          - { os: ubuntu-24.04-arm, label: linux-arm64-musl, container: "alpine:3" }
 
     steps:
+      - name: Node, the Alpine way
+        if: matrix.container != ''
+        # `actions/setup-node` fetches a glibc build of node, which cannot run
+        # here. Alpine's own packages are the only option, and bash because
+        # every step below asks for it.
+        run: apk add --no-cache nodejs npm bash
+
       - uses: actions/setup-node@v4
+        if: matrix.container == ''
         with:
           node-version: 22
           # No `registry-url`. It writes an .npmrc with a placeholder auth
