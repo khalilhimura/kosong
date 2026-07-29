@@ -258,7 +258,11 @@ jobs:
           echo "node: $(node --version)"
           echo "registry: $(npm config get registry)"
           echo "NODE_AUTH_TOKEN set: ${NODE_AUTH_TOKEN:+yes}${NODE_AUTH_TOKEN:-no}"
-          for f in "$HOME/.npmrc" "$GITHUB_WORKSPACE/.npmrc"; do
+          # NPM_CONFIG_USERCONFIG is where `setup-node` actually puts it —
+          # $HOME/.npmrc is not read at all, which the first run of this step
+          # established by reporting both candidates absent.
+          for f in "${NPM_CONFIG_USERCONFIG:-}" "$HOME/.npmrc" "$GITHUB_WORKSPACE/.npmrc"; do
+            [ -n "$f" ] || continue
             if [ -f "$f" ]; then
               echo "--- $f"
               sed 's/=.*/=<redacted>/' "$f"
