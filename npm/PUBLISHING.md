@@ -54,20 +54,77 @@ The runner's bundled npm is too old for trusted publishing, so the job installs
 `npm@latest` first. Without that, publishing falls back to looking for a token
 that is deliberately not there.
 
-## Before the first publish ever runs
+This applies from the **second** release onward. See below for why the first
+one is different.
 
-None of this can be done from CI.
+## The first release cannot use the workflow, and that is not a bug
 
-- **Create the `@kosong` org** on npmjs, owned by the publishing account. Free
-  for public packages.
-- **Configure trusted publishing** for each package on npmjs, pointing at this
-  repository and `release.yml`. A scoped package must exist before it can be
-  configured, which is the awkward part: the first publish of each package
-  needs a token, or the packages need creating by hand once.
-- **Confirm the unscoped name `kosong` is still free.** It was on 2026-07-29.
-  If it has been taken since, the launcher, the docs and this file all change.
-- Scoped packages are **private by default**; the job passes `--access public`
-  so the first publish does not fail on it.
+Trusted publishing is configured per package, and npm's own prerequisites for
+`npm trust` say it plainly: **"The package you're configuring must already
+exist on the npm registry."** Five packages that have never been published
+cannot be configured, so the first publish has to happen some other way.
+
+Do it by hand, from a machine, once. The alternative — a publish token in
+repository secrets for one release — puts a credential in CI that this project
+has otherwise avoided entirely, to save one manual afternoon.
+
+Checked against the registry on 2026-07-29: `kosong` is unclaimed, and nothing
+is published under the `@kosong` scope. Re-check both before starting; if the
+unscoped name has gone, the launcher, the docs and this file all change.
+
+1. **Create the `@kosong` org** on npmjs, owned by the publishing account. Free
+   for public packages.
+2. **Enable two-factor authentication** on that account. `npm trust` requires
+   it, and so does publishing to a new scope.
+3. **Generate the packages** for the release version:
+
+   ```bash
+   cargo build --release
+   node npm/verify.mjs          # 15 checks, and it builds npm/dist as a side effect
+   ```
+
+   For a real release use the four published binaries rather than one local
+   build — download the release archives and pass `--artifacts`, exactly as the
+   workflow does. A local build produces only the host's platform, and
+   `build.mjs` will refuse to write a launcher from an incomplete set.
+
+4. **Publish, platform packages first, launcher last, all to `next`:**
+
+   ```bash
+   for p in npm/dist/@kosong/* npm/dist/kosong; do
+     ( cd "$p" && npm publish --access public --tag next )
+   done
+   ```
+
+   `--access public` is not optional. Scoped packages are private by default
+   and the first publish fails without it.
+
+5. **Configure trusted publishing on all five** (needs npm 11.15.0 or later):
+
+   ```bash
+   for p in @kosong/cli-darwin-arm64 @kosong/cli-darwin-x64 \
+            @kosong/cli-linux-x64-gnu @kosong/cli-linux-arm64-gnu kosong; do
+     npm trust github "$p" --file release.yml --repo khalilhimura/kosong \
+       --allow-publish --yes
+   done
+   ```
+
+6. **Verify a real install, then move `latest`** — steps 4 and 5 of the order
+   above. They do not become optional just because this release was manual.
+
+Every release after this one runs the workflow with no token anywhere.
+
+### What this costs, stated plainly
+
+The npm packages for that first version carry **no provenance attestation**.
+`--provenance` needs a CI runner with an OIDC token, and a laptop is not one.
+The GitHub Release tarballs for the same version are still attested by the
+`build` job, so only the npm copies of a single version are affected, and every
+version after is attested on both channels.
+
+Publishing by hand first does not break the tagged release. The workflow skips
+any package whose exact version is already on the registry, so tagging `v0.2.0`
+after hand-publishing `0.2.0` runs green and does nothing.
 
 ## Verifying locally
 
