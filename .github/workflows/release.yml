@@ -58,7 +58,24 @@ jobs:
           key: ${{ matrix.target }}
 
       - name: Build
-        run: cargo build --release --locked --target ${{ matrix.target }}
+        shell: bash
+        # `--remap-path-prefix` rewrites the absolute paths rustc bakes into the
+        # binary — the cargo registry and the workspace — to fixed stems. Without
+        # it the binary carries /home/runner/.cargo/... here and whatever a
+        # rebuilder's home directory is elsewhere, so two builds of the same
+        # commit differ before they are even packaged. 456 such strings were in
+        # the 0.2.1 binary.
+        #
+        # `trim-paths` in the release profile is the tidier way to say this and
+        # is not available: Cargo 1.97.1 rejects it outright as unstable. This
+        # flag is stable and does the same job.
+        #
+        # The stems have to match for a rebuild to match, so they are named in
+        # the release notes as well as here.
+        run: |
+          set -euo pipefail
+          export RUSTFLAGS="--remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=$GITHUB_WORKSPACE=/src"
+          cargo build --release --locked --target ${{ matrix.target }}
 
       - name: The binary runs before it is shipped
         # A cross-built artifact cannot be smoke-tested, but a native one can,
