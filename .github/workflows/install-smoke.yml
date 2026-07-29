@@ -20,6 +20,14 @@ on:
         description: dist-tag or version to install
         type: string
         default: next
+  # Called by release.yml once a publish has actually happened, so this is one
+  # definition rather than a copy living in the release workflow.
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: false
+        default: next
 
 permissions: {}
 
@@ -55,6 +63,27 @@ jobs:
           # No `registry-url`. It writes an .npmrc with a placeholder auth
           # token and `always-auth`, which broke three tagged releases; nothing
           # here needs to authenticate at all.
+
+      - name: Wait for the registry to serve the tag
+        shell: bash
+        # Called straight after a publish, so the tag can briefly resolve to
+        # nothing through npm's CDN. Without this the release would fail on a
+        # propagation delay and look like a broken package, which is the worst
+        # kind of false alarm — one that arrives at the end of a release.
+        #
+        # Bounded, and it fails rather than proceeding: two minutes of a version
+        # not existing is a real problem, not a slow cache.
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 24); do
+            if npm view "kosong@${{ inputs.tag }}" version >/dev/null 2>&1; then
+              echo "resolved after $((attempt * 5))s or less"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::kosong@${{ inputs.tag }} did not resolve within 2 minutes"
+          exit 1
 
       - name: Install from the registry
         shell: bash

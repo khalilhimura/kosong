@@ -213,6 +213,12 @@ jobs:
       # Trusted publishing (OIDC), so no long-lived NPM_TOKEN exists to leak.
       # The same token type the attestation step above already uses.
       id-token: write
+    outputs:
+      # Whether this run actually published, so the install check below knows
+      # there is something new on the registry to install. False on the very
+      # first release, which is published by hand.
+      published: ${{ steps.bootstrap.outputs.published }}
+      version: ${{ steps.build.outputs.version }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -433,3 +439,20 @@ jobs:
             echo "npm dist-tag add kosong@$VERSION latest"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  verify-install:
+    name: Verify install
+    needs: npm
+    # Only when this run put something new on the registry. A rehearsal
+    # publishes nothing, and the first release is published by hand — in both
+    # cases there is nothing here that was not already there.
+    if: github.event_name == 'push' && needs.npm.outputs.published == 'true'
+    # One definition, called rather than copied. `install-smoke.yml` is also
+    # dispatchable on its own, which is how it gets run against `latest` after
+    # the tag moves.
+    uses: ./.github/workflows/install-smoke.yml
+    with:
+      # `next` is where the publish step puts things. `latest` still points at
+      # the previous release at this moment, so checking it would verify the
+      # version before this one and pass for the wrong reason.
+      tag: next
