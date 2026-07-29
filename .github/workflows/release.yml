@@ -229,7 +229,23 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          registry-url: https://registry.npmjs.org
+          # Deliberately no `registry-url`. It looks like the thing to set for
+          # a job that publishes to npm, and it is what broke two releases.
+          #
+          # `registry-url` makes setup-node write an .npmrc containing
+          # `_authToken=${NODE_AUTH_TOKEN}`, `registry=…` and `always-auth`,
+          # and export NODE_AUTH_TOKEN as the literal placeholder
+          # `XXXXX-XXXXX-XXXXX-XXXXX`. npm then sends that placeholder as a
+          # credential — and `always-auth` means it does so on every request,
+          # so there is no path back to OIDC. The registry answers an
+          # unauthorised package with 404, which is why two tagged releases
+          # failed with "could not be found or you do not have permission" on
+          # packages that plainly exist.
+          #
+          # Nothing is lost by dropping it: the diagnostic step below reported
+          # the registry as https://registry.npmjs.org/, which is npm's default
+          # with no .npmrc at all. npm's own trusted-publishing guidance is
+          # explicit that no NODE_AUTH_TOKEN should be present for the publish.
 
       - name: npm new enough to publish without a token
         # Trusted publishing needs npm 11.5.1 or later, and the runner's
