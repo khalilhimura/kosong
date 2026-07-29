@@ -26,13 +26,42 @@ fail() { printf '\nCould not install kosong: %s\n' "$*" >&2; exit 1; }
 
 # --- What are we installing onto? -------------------------------------------
 
+# Which C library this Linux uses.
+#
+# Alpine and other musl systems cannot run a glibc build, and until musl was
+# published this script handed them one: the download succeeded, the checksum
+# matched, and the binary would not start.
+#
+# `ldd --version` is the most portable probe available in a POSIX shell. GNU
+# ldd prints "GNU libc" or "GLIBC"; musl's prints "musl libc" — to stderr, and
+# with a non-zero exit, so both streams are read and the status ignored. Where
+# there is no ldd at all, the interpreter in /lib is the fallback.
+detect_libc() {
+    if libc="$(ldd --version 2>&1)"; then :; fi
+    case "$libc" in
+        *musl*) printf 'musl'; return ;;
+        *GNU*|*GLIBC*|*glibc*) printf 'gnu'; return ;;
+    esac
+
+    # No usable ldd. musl systems carry ld-musl-*.so.1; glibc carries
+    # ld-linux-*.so.
+    for candidate in /lib/ld-musl-*.so.1; do
+        [ -e "$candidate" ] && { printf 'musl'; return; }
+    done
+
+    # Assume glibc, which is what the great majority of Linux is. A wrong guess
+    # here produces a binary that will not start, which the installer catches
+    # before reporting success.
+    printf 'gnu'
+}
+
 detect_target() {
     os="$(uname -s)"
     arch="$(uname -m)"
 
     case "$os" in
         Darwin) os_part="apple-darwin" ;;
-        Linux)  os_part="unknown-linux-gnu" ;;
+        Linux)  os_part="unknown-linux-$(detect_libc)" ;;
         *) fail "kosong supports macOS and Linux. This machine reports '$os'." ;;
     esac
 

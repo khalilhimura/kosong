@@ -37,6 +37,13 @@ jobs:
             os: ubuntu-latest
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
+          # musl, so Alpine and other non-glibc Linux have something to install.
+          # Statically linked, which is why the smoke step below can run them on
+          # a glibc runner.
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
 
     steps:
       - uses: actions/checkout@v7
@@ -50,8 +57,16 @@ jobs:
 
       - name: Install toolchain
         run: |
+          set -euo pipefail
           rustup show active-toolchain || rustup toolchain install
           rustup target add ${{ matrix.target }}
+
+          # musl needs its own linker. Everything else here is pure Rust —
+          # rustls rather than native-tls, so there is no OpenSSL to
+          # cross-build — which is why this is the only extra package.
+          case "${{ matrix.target }}" in
+            *-musl) sudo apt-get update -qq && sudo apt-get install -y -qq musl-tools ;;
+          esac
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:

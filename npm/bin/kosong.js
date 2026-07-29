@@ -71,9 +71,7 @@ function unsupportedPlatform() {
     'It is published for:',
     ...Object.keys(PLATFORMS).map((key) => `  ${key}`),
     '',
-    KEY.endsWith('-musl')
-      ? 'This looks like Alpine or another musl system. Only glibc Linux is built\ntoday. Building from source works: https://github.com/khalilhimura/kosong'
-      : 'See https://github.com/khalilhimura/kosong/releases',
+    'See https://github.com/khalilhimura/kosong/releases',
   ]);
 }
 
