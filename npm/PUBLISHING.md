@@ -143,7 +143,14 @@ unscoped name has gone, the launcher, the docs and this file all change.
    `npm trust list` later reported `No trust configurations found`.
 
    So do one package by hand, complete the browser sign-in, and only then loop
-   over the rest:
+   over the rest.
+
+   **`--file` takes the bare filename**, `release.yml`, not a path. Confirmed
+   from `npm trust`'s own confirmation screen, which resolves it to
+   `github.com/khalilhimura/kosong/blob/HEAD/.github/workflows/release.yml`
+   before asking you to proceed. Read that screen: it is the one place the
+   repository, the workflow and the permission are shown together before
+   anything is created.
 
    ```bash
    if [ "$(printf '11.15.0\n%s\n' "$(npm --version)" | sort -V | head -1)" != "11.15.0" ]; then
@@ -160,11 +167,10 @@ unscoped name has gone, the launcher, the docs and this file all change.
    npm trust list @thefutureissolo/kosong-darwin-arm64
 
    # Then the remaining four, on the authenticated session.
-   for p in $(node -p "
-     const m = require('./npm/dist/kosong/package.json');
-     [...Object.values(m.kosong.platforms), m.name].join(' ')
-   "); do
-     [ "$p" = "@thefutureissolo/kosong-darwin-arm64" ] && continue
+   for p in @thefutureissolo/kosong-darwin-x64 \
+            @thefutureissolo/kosong-linux-x64-gnu \
+            @thefutureissolo/kosong-linux-arm64-gnu \
+            kosong; do
      npm trust github "$p" --file release.yml --repo khalilhimura/kosong \
        --allow-publish --yes
    done
