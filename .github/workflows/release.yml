@@ -334,8 +334,20 @@ jobs:
           #
           # Everything goes to the `next` tag. `latest` is what
           # `npm install -g kosong` resolves, so until the tag is moved by hand
-          # a partial publish is invisible to users. That is the whole reason
-          # this is recoverable.
+          # a partial publish is invisible to users, which is what makes it
+          # recoverable.
+          #
+          # That holds here and does not hold generally: npm sets `latest` on a
+          # package's *first* published version whatever `--tag` says, as all
+          # five did on the 0.2.0 bootstrap. This job never publishes a first
+          # `kosong`, because it does not run until one exists — so the launcher,
+          # the package that decides what a user installs, is always a later
+          # version with `latest` already parked on the release before it.
+          #
+          # A newly added platform package *is* a first publish and will take
+          # `latest` immediately. That is harmless: the launcher pins exact
+          # versions, so nothing resolves a platform package by tag. The order
+          # below is what actually protects the release.
           publish() {
             name="$(node -p "require('./$1/package.json').name")"
             if npm view "$name@$VERSION" version >/dev/null 2>&1; then
