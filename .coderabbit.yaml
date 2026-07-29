@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=https://www.coderabbit.ai/integrations/schema.v2.json
+#
+# CodeRabbit still reviews. It no longer reports a status anyone can mistake
+# for one.
+#
+# The problem was not the reviews — those are good, and caught something worth
+# acting on in three pull requests running. The problem was the signal. On PRs
+# #12 and #13 the `CodeRabbit` commit status was `success` with the description
+# `Review rate limited`, meaning it had never read a line of either change.
+# Both merged on a green tick that stood for nothing, and `success` is
+# indistinguishable from "reviewed, found nothing" unless you open the
+# description and read it.
+#
+# Re-requesting does not rescue it. `@coderabbitai full review` on both PRs
+# answered `✅ Action performed — Full review finished` and produced no review,
+# no walkthrough, and no inline comments; the same reply carried "Your included
+# review limit is currently reached … may still proceed through usage-based
+# billing if eligible", and it was not eligible. So the affirmative wording is
+# unreliable at two levels, and the quota is a plan limit that will recur every
+# time several PRs land close together.
+#
+# `main` has no branch protection, so nothing was ever mechanically gated on
+# this. What it gated was judgement: a green row in `gh pr checks` reads as a
+# pass. Removing the row is therefore the honest fix — a signal that cannot
+# distinguish "reviewed" from "never ran" should not be shown as if it could.
+#
+# Both surfaces are named because they are alternatives, not layers:
+# `commit_status` is documented as the legacy mirror used only when
+# `review_progress` is disabled. This repository was observably getting the
+# legacy commit status and no check run, so `commit_status: false` is the one
+# that matters today; `review_progress: false` keeps the answer the same if
+# CodeRabbit switches a repository over to the newer surface.
+#
+# To verify a change was actually reviewed, ask for the artefacts rather than
+# the status — a real review leaves a review object and a Walkthrough comment:
+#
+#   gh api repos/khalilhimura/kosong/pulls/<n>/reviews \
+#     --jq '[.[]|select(.user.login=="coderabbitai[bot]")]|length'
+#
+# Reverting this means deleting the file, and gets the misleading tick back.
+
+reviews:
+  review_progress: false
+  commit_status: false
