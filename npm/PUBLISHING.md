@@ -7,7 +7,7 @@ and 5 are yours, deliberately.
 
 Publishing is not atomic. Each `npm publish` is a separate request, and a
 half-published release is worse than a failed one: `kosong@0.2.0` existing
-while `@kosong/cli-linux-x64-gnu@0.2.0` does not means every Linux install
+while `@thefutureissolo/kosong-linux-x64-gnu@0.2.0` does not means every Linux install
 resolves, succeeds, and then cannot run. npm versions are immutable, so the
 repair is a new version rather than a fix.
 
@@ -69,10 +69,10 @@ repository secrets for one release — puts a credential in CI that this project
 has otherwise avoided entirely, to save one manual afternoon.
 
 Checked against the registry on 2026-07-29: `kosong` is unclaimed, and nothing
-is published under the `@kosong` scope. Re-check both before starting; if the
+is published under the `@thefutureissolo` scope. Re-check both before starting; if the
 unscoped name has gone, the launcher, the docs and this file all change.
 
-1. **Create the `@kosong` org** on npmjs, owned by the publishing account. Free
+1. **Create or confirm the `@thefutureissolo` org** on npmjs, owned by the publishing account. Free
    for public packages.
 2. **Enable two-factor authentication** on that account. `npm trust` requires
    it, and so does publishing to a new scope.
@@ -91,7 +91,7 @@ unscoped name has gone, the launcher, the docs and this file all change.
 4. **Publish, platform packages first, launcher last, all to `next`:**
 
    ```bash
-   for p in npm/dist/@kosong/* npm/dist/kosong; do
+   for p in npm/dist/@*/* npm/dist/kosong; do
      ( cd "$p" && npm publish --access public --tag next )
    done
    ```
@@ -102,8 +102,11 @@ unscoped name has gone, the launcher, the docs and this file all change.
 5. **Configure trusted publishing on all five** (needs npm 11.15.0 or later):
 
    ```bash
-   for p in @kosong/cli-darwin-arm64 @kosong/cli-darwin-x64 \
-            @kosong/cli-linux-x64-gnu @kosong/cli-linux-arm64-gnu kosong; do
+   # Read the names out of what was built, rather than retyping five of them.
+   for p in $(node -p "
+     const m = require('./npm/dist/kosong/package.json');
+     [...Object.values(m.kosong.platforms), m.name].join(' ')
+   "); do
      npm trust github "$p" --file release.yml --repo khalilhimura/kosong \
        --allow-publish --yes
    done
@@ -136,7 +139,7 @@ node npm/build.mjs
 Then, from a scratch directory:
 
 ```bash
-npm install -g ./npm/dist/@kosong/cli-<your-platform> ./npm/dist/kosong
+npm install -g ./npm/dist/@thefutureissolo/kosong-<your-platform> ./npm/dist/kosong
 kosong --version
 ```
 
@@ -145,7 +148,7 @@ globals lets the platform package's own bin win, so `kosong` runs the binary
 directly and the launcher is never exercised — a test that passes without
 testing anything. It happened during Phase A. To exercise the launcher, build
 the layout npm really produces: the launcher in `node_modules/kosong`, the
-platform package beside it under `node_modules/@kosong/`, and the `bin` symlink
+platform package beside it under `node_modules/@thefutureissolo/`, and the `bin` symlink
 pointing at `kosong/bin/kosong.js`.
 
 If `kosong --version` prints a version that is not in `Cargo.toml`, the shell

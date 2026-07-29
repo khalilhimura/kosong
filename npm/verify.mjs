@@ -127,13 +127,26 @@ if (built.status !== 0) {
   process.exit(1);
 }
 
+/// The scope directory under `dist`, discovered rather than written down.
+///
+/// This file used to name the scope in five places, so renaming the npm org
+/// meant editing the test suite that is supposed to catch the rename going
+/// wrong. There is exactly one scope directory; find it.
+function scopeDir() {
+  const dist = path.join(HERE, 'dist');
+  const scopes = fs.readdirSync(dist).filter((entry) => entry.startsWith('@'));
+  assert.equal(scopes.length, 1, `expected one scope under dist, saw ${scopes}`);
+  return path.join(dist, scopes[0]);
+}
+
+const SCOPE = path.basename(scopeDir());
+
 /// The platform package for the host, which is the only one with a real binary.
 function hostPackage() {
-  const scope = path.join(HERE, 'dist', '@kosong');
-  const entries = fs.readdirSync(scope);
+  const entries = fs.readdirSync(scopeDir());
   const wanted = entries.filter((entry) => entry.includes(process.arch));
   assert.ok(wanted.length === 1, `expected one package for ${process.arch}, saw ${entries}`);
-  return path.join(scope, wanted[0]);
+  return path.join(scopeDir(), wanted[0]);
 }
 
 check('platform package declares no bin', () => {
@@ -152,10 +165,10 @@ check('platform package declares no bin', () => {
 function install() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kosong-npm-'));
   const modules = path.join(root, 'node_modules');
-  fs.mkdirSync(path.join(modules, '@kosong'), { recursive: true });
+  fs.mkdirSync(path.join(modules, SCOPE), { recursive: true });
 
   for (const [source, destination] of [
-    [hostPackage(), path.join(modules, '@kosong', path.basename(hostPackage()))],
+    [hostPackage(), path.join(modules, SCOPE, path.basename(hostPackage()))],
     [path.join(HERE, 'dist', 'kosong'), path.join(modules, 'kosong')],
   ]) {
     const packed = run('npm', ['pack', '--pack-destination', root], { cwd: source });
@@ -178,7 +191,7 @@ check('the binary is executable after a pack and unpack round trip', () => {
     path.dirname(LAUNCHER),
     '..',
     '..',
-    '@kosong',
+    SCOPE,
     path.basename(hostPackage()),
     'bin',
     process.platform === 'win32' ? 'kosong.exe' : 'kosong',
@@ -227,7 +240,7 @@ async function withStandIn(script, body) {
     path.dirname(LAUNCHER),
     '..',
     '..',
-    '@kosong',
+    SCOPE,
     path.basename(hostPackage()),
     'bin',
     process.platform === 'win32' ? 'kosong.exe' : 'kosong',

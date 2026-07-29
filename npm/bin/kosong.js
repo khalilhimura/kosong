@@ -46,12 +46,14 @@ function platformKey() {
 }
 
 const KEY = platformKey();
-const WANTED = `@kosong/cli-${KEY}`;
 const BINARY = process.platform === 'win32' ? 'kosong.exe' : 'kosong';
 
-// The published set, read from this package's own manifest rather than
-// duplicated here. Adding a target to `build.mjs` updates this by itself.
-const SUPPORTED = Object.keys(own.optionalDependencies || {});
+// Platform key to package name, generated into this package's own manifest by
+// `build.mjs`. Deliberately a lookup rather than a name this file builds from a
+// scope and a prefix: the scope then lives in one place, and renaming the org
+// cannot leave a launcher that asks for packages nobody published.
+const PLATFORMS = (own.kosong && own.kosong.platforms) || {};
+const WANTED = PLATFORMS[KEY];
 
 // ---------------------------------------------------------------------------
 // Failure, explained
@@ -63,12 +65,11 @@ function fail(lines) {
 }
 
 function unsupportedPlatform() {
-  const names = SUPPORTED.map((n) => n.replace('@kosong/cli-', '  '));
   fail([
     `kosong has no build for ${KEY}.`,
     '',
     'It is published for:',
-    ...names,
+    ...Object.keys(PLATFORMS).map((key) => `  ${key}`),
     '',
     KEY.endsWith('-musl')
       ? 'This looks like Alpine or another musl system. Only glibc Linux is built\ntoday. Building from source works: https://github.com/khalilhimura/kosong'
@@ -94,7 +95,7 @@ function packageMissing() {
 // ---------------------------------------------------------------------------
 
 function locate() {
-  if (!SUPPORTED.includes(WANTED)) unsupportedPlatform();
+  if (!WANTED) unsupportedPlatform();
 
   let manifest;
   try {

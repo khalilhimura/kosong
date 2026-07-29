@@ -38,8 +38,17 @@ import { workspaceVersion } from './cargo.mjs';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
 
-/// The npm scope. Platform packages are `@kosong/cli-<platform>-<arch>[-<libc>]`.
-const SCOPE = '@kosong';
+/// The npm scope, and the only place it is written down.
+///
+/// Platform packages are `@thefutureissolo/kosong-<platform>-<arch>[-<libc>]`.
+/// The product is named inside the package because the scope is an umbrella
+/// for more than one project: `cli-darwin-arm64` under a company scope is a
+/// CLI of nothing in particular.
+///
+/// The launcher is deliberately **not** scoped. It stays `kosong`, so the
+/// command a beginner types is `npm install -g kosong`, and it is the only
+/// name of the six that a user ever has to know.
+const SCOPE = '@thefutureissolo';
 
 // ---------------------------------------------------------------------------
 // Targets
@@ -47,10 +56,12 @@ const SCOPE = '@kosong';
 
 // The one place a Rust triple is mapped to npm's platform vocabulary.
 //
-// `key` must match what `bin/kosong.js` computes at runtime from
-// `process.platform`, `process.arch`, and the libc probe. The launcher derives
-// it by the same formula rather than carrying a copy of this table, so adding a
-// row here is the only edit an added target needs.
+// `keyFor` produces the string `bin/kosong.js` computes at runtime from
+// `process.platform`, `process.arch`, and the libc probe. The launcher does not
+// rebuild package names from it — the key-to-package map is written into the
+// launcher's own manifest by `emitMainPackage`, so the scope and the naming
+// scheme appear exactly once, here. Adding a row is the only edit a new target
+// needs.
 //
 // `released` marks a triple that `.github/workflows/release.yml` actually
 // builds. Windows is listed but not released: the name is reserved so that
@@ -75,7 +86,7 @@ function keyFor(target) {
 }
 
 function packageNameFor(target) {
-  return `${SCOPE}/cli-${keyFor(target)}`;
+  return `${SCOPE}/kosong-${keyFor(target)}`;
 }
 
 function binaryNameFor(target) {
@@ -222,6 +233,16 @@ function emitMainPackage(version, outDir, built) {
     bin: { kosong: 'bin/kosong.js' },
     files: ['bin', 'LICENSE'],
     optionalDependencies,
+    // The launcher's lookup table, so it never rebuilds a package name from
+    // parts. Before this, the scope was written in `build.mjs`, twice in
+    // `bin/kosong.js` and five times in `verify.mjs` — five places to miss when
+    // the org changes, and a miss produces a launcher that resolves nothing on
+    // every platform. Now the map is generated and the launcher only reads it.
+    kosong: {
+      platforms: Object.fromEntries(
+        built.map(({ target, name }) => [keyFor(target), name]),
+      ),
+    },
   };
 
   writeJson(path.join(dir, 'package.json'), manifest);
