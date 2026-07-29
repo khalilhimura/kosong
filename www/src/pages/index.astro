@@ -72,6 +72,37 @@ const kickers = {
 
   <section id="install">
     <h2>Install</h2>
+    <p>
+      Three ways. They install the same binary, from the same release, checked
+      against the same published checksum.
+    </p>
+
+    <h3>Homebrew</h3>
+    <div class="console">
+      <span class="line" data-prompt>brew tap khalilhimura/tap</span>
+      <span class="line" data-prompt>brew trust khalilhimura/tap</span>
+      <span class="line" data-prompt>brew install kosong</span>
+    </div>
+    <p>
+      The middle line is not optional and not a formality: Homebrew refuses to
+      load formulae from taps outside its own repositories until you say you
+      trust them. Skip it and <code>brew install</code> stops with an error
+      rather than installing anything.
+    </p>
+
+    <h3>npm</h3>
+    <div class="console">
+      <span class="line" data-prompt>npm install -g kosong</span>
+    </div>
+    <p>
+      <code>npx kosong start</code> runs it without installing anything
+      permanently. Installed this way, <code>kosong</code> is a small script
+      that starts the real binary, which costs a fraction of a second per
+      command.
+    </p>
+
+    <h3>The installer</h3>
+    <p>Needs neither Homebrew nor Node.</p>
     <div class="console">
       <span class="line" data-prompt>curl -fsSL https://kosong.thefutureissolo.com/install.sh | sh</span>
     </div>
@@ -85,6 +116,11 @@ const kickers = {
     <div class="console">
       <span class="line" data-prompt>shasum -a 256 -c SHA256SUMS --ignore-missing</span>
     </div>
+    <p>
+      macOS and Linux, on Intel and ARM. Windows and Alpine are not among them,
+      and on those the install stops with a message saying so rather than
+      leaving you something that cannot run.
+    </p>
   </section>
 
   <section>

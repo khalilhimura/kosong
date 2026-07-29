@@ -10,6 +10,30 @@ and environment variables — will not change without being named here.
 
 ## Unreleased
 
+### Added
+
+- kosong can be installed with Homebrew.
+
+  ```bash
+  brew tap khalilhimura/tap
+  brew trust khalilhimura/tap
+  brew install kosong
+  ```
+
+  The middle line is not optional: Homebrew refuses to load formulae from taps
+  outside its own repositories until you say you trust them, and `brew install`
+  stops with an error rather than installing anything. It is easy to miss, so
+  it is written everywhere the install is.
+
+  The formula installs the same binary the installer downloads, checked against
+  the same published checksum. Nothing is compiled.
+
+### Fixed
+
+- The README and the website now mention every way to install kosong. `npm
+  install -g kosong` has worked since 0.2.0 and neither said so, so the only
+  documented route was the shell installer.
+
 ## [0.2.1] — 2026-07-29
 
 A release you can rebuild and check for yourself. Nothing about using `kosong`
