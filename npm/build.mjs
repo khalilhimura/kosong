@@ -95,13 +95,29 @@ function binaryNameFor(target) {
   return target.os === 'win32' ? 'kosong.exe' : 'kosong';
 }
 
+/// The C library this host uses, or null where the concept does not apply.
+///
+/// Same probe the launcher uses: a glibc runtime names its version in the
+/// diagnostic report and a musl one does not.
+function hostLibc() {
+  if (process.platform !== 'linux') return null;
+  try {
+    return process.report.getReport().header.glibcVersionRuntime ? 'glibc' : 'musl';
+  } catch {
+    return 'glibc';
+  }
+}
+
 /// Whether a target describes the machine running this script.
 ///
-/// Deliberately ignores libc: a glibc host and a musl host disagree here, but
-/// no local build produces both, and the only use is deciding which row may
-/// claim the untargeted `target/release` directory.
+/// libc is part of the answer, and an earlier version of this said it was not:
+/// "no local build produces both". That held while linux had one row per
+/// architecture. With musl added there are two, and on a Linux x64 host both
+/// claimed the untargeted `target/release` — emitting two packages from one
+/// glibc binary, one of them labelled musl. `verify.mjs` caught it.
 function isHost(target) {
-  return target.os === process.platform && target.cpu === process.arch;
+  if (target.os !== process.platform || target.cpu !== process.arch) return false;
+  return (target.libc ?? null) === hostLibc();
 }
 
 // ---------------------------------------------------------------------------
