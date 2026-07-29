@@ -228,8 +228,60 @@ jobs:
           path: npm/tarballs/*.tgz
           if-no-files-found: error
 
-      - name: Publish
+      - name: Has the first release happened yet?
+        id: bootstrap
+        # Only on a tag. A rehearsal publishes nothing, so a registry that is
+        # briefly unreachable should not fail a dry run that was never going to
+        # touch it.
         if: github.event_name == 'push'
+        # Trusted publishing is configured per package, and npm cannot configure
+        # it for a package that does not exist — so the very first release is
+        # published by hand and this job has nothing it can authenticate with.
+        # Rather than fail the first tag and leave a red run in the history, it
+        # detects the situation and says what to do.
+        #
+        # `kosong` is the right thing to probe because it is published *last*:
+        # if the launcher exists, the platform packages it names do too.
+        #
+        # A 404 is the only answer treated as "not yet". Anything else — a
+        # network blip, a registry outage, a proxy — fails the step, because
+        # silently skipping a real publish is the one outcome worse than a red
+        # run.
+        run: |
+          set -euo pipefail
+          code="$(curl -sS -o /dev/null -w '%{http_code}' https://registry.npmjs.org/kosong)"
+          case "$code" in
+            200) echo "published=true"  >> "$GITHUB_OUTPUT" ;;
+            404) echo "published=false" >> "$GITHUB_OUTPUT" ;;
+            *)
+              echo "::error::registry answered $code for kosong; cannot tell whether this is the first release"
+              exit 1
+              ;;
+          esac
+          echo "registry says kosong exists: $code"
+
+      - name: The first release is published by hand
+        if: github.event_name == 'push' && steps.bootstrap.outputs.published != 'true'
+        env:
+          VERSION: ${{ steps.build.outputs.version }}
+        run: |
+          {
+            echo "## npm — nothing published"
+            echo
+            echo "\`kosong\` is not on the registry yet, so trusted publishing cannot"
+            echo "have been configured for it: npm only accepts that configuration for"
+            echo "packages that already exist."
+            echo
+            echo "This release is published by hand, once. The tarballs built here are"
+            echo "attached to this run as \`npm-packages\`, and the steps are in"
+            echo "[npm/PUBLISHING.md](npm/PUBLISHING.md)."
+            echo
+            echo "After \`npm trust github\` has run for all five packages, this job"
+            echo "publishes every later release on its own — no change needed here."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish
+        if: github.event_name == 'push' && steps.bootstrap.outputs.published == 'true'
         env:
           VERSION: ${{ steps.build.outputs.version }}
         run: |
@@ -258,7 +310,7 @@ jobs:
           publish npm/dist/kosong
 
       - name: How to finish the release
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && steps.bootstrap.outputs.published == 'true'
         env:
           VERSION: ${{ steps.build.outputs.version }}
         run: |
