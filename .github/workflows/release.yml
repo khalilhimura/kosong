@@ -71,22 +71,34 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
 
-          # A tag names a version; the manifest defines one. Nothing until now
-          # made them agree, so a mistyped tag — or a forgotten version bump —
-          # would ship an archive whose name contradicts the binary inside it,
-          # with a signed attestation vouching for the pair. A prerelease
-          # suffix is allowed, but the version it qualifies must be the real
-          # one: v0.1.1-rc.1 requires the manifest to already say 0.1.1.
+          CRATE=$(cargo metadata --format-version 1 --no-deps \
+            | jq -r '.packages[] | select(.name == "kosong-cli") | .version')
+
           if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
-            CRATE=$(cargo metadata --format-version 1 --no-deps \
-              | jq -r '.packages[] | select(.name == "kosong-cli") | .version')
+            # A tag names a version; the manifest defines one. Nothing until now
+            # made them agree, so a mistyped tag — or a forgotten version bump —
+            # would ship an archive whose name contradicts the binary inside it,
+            # with a signed attestation vouching for the pair. A prerelease
+            # suffix is allowed, but the version it qualifies must be the real
+            # one: v0.1.1-rc.1 requires the manifest to already say 0.1.1.
+            VERSION="${GITHUB_REF_NAME#v}"
             if [ "${VERSION%%-*}" != "$CRATE" ]; then
               echo "::error::tag ${GITHUB_REF_NAME} does not match the crate version ${CRATE}"
               echo "Bump the workspace version in Cargo.toml, or retag." >&2
               exit 1
             fi
+          else
+            # A rehearsal has no tag, and `${GITHUB_REF_NAME#v}` is then the
+            # branch name. That produced archives called
+            # `kosong-reproducible-archives-x86_64-unknown-linux-gnu.tar.gz`,
+            # which the npm job could not find because it looks for the manifest
+            # version — so `workflow_dispatch` failed at the step it exists to
+            # rehearse, and had done since the npm job was added.
+            #
+            # The manifest is the right answer here anyway: a branch name is not
+            # a version, and it has no business in an artifact name.
+            VERSION="$CRATE"
           fi
 
           NAME="kosong-${VERSION}-${{ matrix.target }}"
