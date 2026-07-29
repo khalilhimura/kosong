@@ -139,7 +139,17 @@ function findBinary(target, version, artifactsDir) {
     // it, or a local build would package this machine's binary as every
     // platform's.
     if (isHost(target)) candidates.push(path.join(ROOT, 'target', 'release', name));
-    return candidates.find((candidate) => fs.existsSync(candidate)) ?? null;
+
+    // Newest wins, rather than first found. A stale `target/<triple>/release`
+    // left by an earlier `cargo build --target ...` otherwise beats a fresh
+    // `cargo build --release`, and the generator packages a binary from a
+    // previous version without saying anything. Seen while cutting 0.3.0: a
+    // four-hour-old 0.2.1 binary was picked over the 0.3.0 one built a minute
+    // earlier, and `verify.mjs` caught the launcher reporting the wrong
+    // version against the right manifest.
+    const existing = candidates.filter((candidate) => fs.existsSync(candidate));
+    if (existing.length === 0) return null;
+    return existing.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0];
   }
 
   const stem = `kosong-${version}-${target.triple}`;
