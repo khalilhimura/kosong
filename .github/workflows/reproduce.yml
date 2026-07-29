@@ -1,0 +1,109 @@
+name: Reproduce
+
+# Builds the same commit twice, in deliberately different places, and compares.
+#
+# This is the check behind the claim that a release can be rebuilt and verified.
+# `--remap-path-prefix` in release.yml rewrites the paths rustc bakes in, and
+# the question this answers is whether that is enough on Linux: does a build
+# from a different directory, with a different CARGO_HOME, produce the same
+# bytes?
+#
+# One variable at a time, on purpose. Both builds use the same runner image,
+# the same pinned toolchain and the same flags; only the paths differ. A
+# different machine would change the image, glibc and the linker at once, and a
+# difference then would not say which of them caused it — macOS already shows
+# what that looks like, where a local rebuild differs from the runner's by 48
+# bytes of linker-stamped UUID and code signature.
+
+on:
+  workflow_dispatch:
+  # Cheap enough to run on changes that could plausibly affect it.
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - ".github/workflows/release.yml"
+      - ".github/workflows/reproduce.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  reproduce:
+    name: Same commit, different paths
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: canonical
+          persist-credentials: false
+
+      - uses: actions/checkout@v7
+        with:
+          # A different directory, and below it a different CARGO_HOME. These
+          # are the two paths release.yml remaps; if the remapping is doing its
+          # job, changing them changes nothing in the output.
+          path: elsewhere/a/rather/different/place
+          persist-credentials: false
+
+      - name: Install the pinned toolchain
+        working-directory: canonical
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - name: Build both
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          build() {
+            local src="$1" home="$2"
+            ( cd "$src"
+              CARGO_HOME="$home" \
+              RUSTFLAGS="--remap-path-prefix=$home=/cargo --remap-path-prefix=$PWD=/src" \
+                cargo build --release --locked --target x86_64-unknown-linux-gnu
+            )
+          }
+
+          build "$GITHUB_WORKSPACE/canonical" "$HOME/.cargo"
+          build "$GITHUB_WORKSPACE/elsewhere/a/rather/different/place" "$GITHUB_WORKSPACE/other-cargo-home"
+
+      - name: Compare
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="$GITHUB_WORKSPACE/canonical/target/x86_64-unknown-linux-gnu/release/kosong"
+          B="$GITHUB_WORKSPACE/elsewhere/a/rather/different/place/target/x86_64-unknown-linux-gnu/release/kosong"
+
+          echo "canonical: $(sha256sum "$A" | cut -d' ' -f1)"
+          echo "elsewhere: $(sha256sum "$B" | cut -d' ' -f1)"
+
+          if cmp -s "$A" "$B"; then
+            echo "identical"
+            echo "### Reproducible: same commit from two different paths produced identical bytes" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # Not a pass, but say something useful about how far off it is rather
+          # than only that it failed.
+          echo "::error::binaries differ"
+          {
+            echo "### Not reproducible"
+            echo
+            echo "\`\`\`"
+            echo "sizes:    $(stat -c%s "$A") vs $(stat -c%s "$B")"
+            echo "differing bytes: $(cmp -l "$A" "$B" | wc -l)"
+            echo "first difference at offset: $(cmp "$A" "$B" 2>&1 | sed 's/.*byte //;s/,.*//')"
+            echo "\`\`\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - name: Where the paths went
+        # Proves the remapping actually applied, rather than both builds simply
+        # sharing a path by accident.
+        shell: bash
+        run: |
+          set -euo pipefail
+          B="$GITHUB_WORKSPACE/elsewhere/a/rather/different/place/target/x86_64-unknown-linux-gnu/release/kosong"
+          echo "runner paths left in the binary: $(strings "$B" | grep -c '/home/runner' || true)"
+          echo "remapped stems present:          $(strings "$B" | grep -c '^/cargo/\|^/src/' || true)"
