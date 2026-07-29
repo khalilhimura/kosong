@@ -117,6 +117,20 @@ unscoped name has gone, the launcher, the docs and this file all change.
 
 Every release after this one runs the workflow with no token anywhere.
 
+### The workflow knows this, and does not need switching on
+
+Tagging `v0.2.0` does not produce a red run. The `npm` job asks the registry
+whether `kosong` exists before it tries to publish, and if it does not, it skips
+publishing and writes these instructions into the run summary instead.
+
+`kosong` is the right thing to probe because it is published **last** — if the
+launcher is there, the platform packages it names are too. Only a `404` counts
+as "not yet"; any other answer, including a network failure, fails the step,
+because silently skipping a real publish is worse than a red run.
+
+So there is nothing to turn on afterwards. Once the five packages exist and
+`npm trust` has run, the next tag publishes on its own.
+
 ### What this costs, stated plainly
 
 The npm packages for that first version carry **no provenance attestation**.
