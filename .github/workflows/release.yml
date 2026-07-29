@@ -237,6 +237,36 @@ jobs:
         # for a token that is deliberately not there.
         run: npm install -g npm@latest
 
+      - name: What the publish will actually authenticate as
+        # Two tagged releases failed here with a 404 on PUT against packages
+        # that plainly exist, which is how the registry reports "not
+        # authorised". Provenance signed both times, so the OIDC token itself
+        # was fine — meaning npm never used it for the publish.
+        #
+        # The suspect is `setup-node`'s `registry-url`: it writes
+        # `_authToken=${NODE_AUTH_TOKEN}` into .npmrc and exports the literal
+        # placeholder `XXXXX-XXXXX-XXXXX-XXXXX`, which npm then sends as a
+        # credential. npm's own trusted-publishing guidance says no
+        # NODE_AUTH_TOKEN should be present for the publish step.
+        #
+        # This step exists so a `workflow_dispatch` can answer that without
+        # burning a tag. It prints no secret: the token is masked by the runner,
+        # and only the shape of the .npmrc line is shown.
+        run: |
+          set -euo pipefail
+          echo "npm:  $(npm --version)"
+          echo "node: $(node --version)"
+          echo "registry: $(npm config get registry)"
+          echo "NODE_AUTH_TOKEN set: ${NODE_AUTH_TOKEN:+yes}${NODE_AUTH_TOKEN:-no}"
+          for f in "$HOME/.npmrc" "$GITHUB_WORKSPACE/.npmrc"; do
+            if [ -f "$f" ]; then
+              echo "--- $f"
+              sed 's/=.*/=<redacted>/' "$f"
+            else
+              echo "--- $f (absent)"
+            fi
+          done
+
       - name: Build the packages
         id: build
         run: |
