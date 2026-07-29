@@ -118,9 +118,31 @@ unscoped name has gone, the launcher, the docs and this file all change.
    `--access public` is not optional. Scoped packages are private by default
    and the first publish fails without it.
 
-5. **Configure trusted publishing on all five** (needs npm 11.15.0 or later):
+5. **Configure trusted publishing on all five.**
+
+   **Check the npm version first, and do not skip the check.** `npm trust`
+   arrived in npm 11.15.0. An older npm answers an unknown command by printing
+   `Unknown command: "trust"` and **exiting 0** — so a loop over five packages
+   reports success while configuring nothing at all, and `--yes` means there is
+   not even a prompt missing to notice.
+
+   That is exactly what happened here: npm 10.9.8 silently configured nothing,
+   and the failure surfaced only at the next tagged release as
+
+   ```
+   npm error 404 ... could not be found or you do not have permission to access it
+   ```
+
+   which reads like a permissions problem on a package that plainly exists,
+   rather than a setup step that never ran.
 
    ```bash
+   if [ "$(printf '11.15.0\n%s\n' "$(npm --version)" | sort -V | head -1)" != "11.15.0" ]; then
+     echo "npm $(npm --version) is too old for \`npm trust\` (needs 11.15.0+)." >&2
+     echo "Run: npm install -g npm@latest" >&2
+     exit 1
+   fi
+
    # Read the names out of what was built, rather than retyping five of them.
    for p in $(node -p "
      const m = require('./npm/dist/kosong/package.json');
@@ -129,7 +151,19 @@ unscoped name has gone, the launcher, the docs and this file all change.
      npm trust github "$p" --file release.yml --repo khalilhimura/kosong \
        --allow-publish --yes
    done
+
+   # Prove it took, rather than trusting five commands that cannot fail loudly.
+   for p in $(node -p "
+     const m = require('./npm/dist/kosong/package.json');
+     [...Object.values(m.kosong.platforms), m.name].join(' ')
+   "); do
+     echo "--- $p"; npm trust list "$p"
+   done
    ```
+
+   The second loop is the point. The first one cannot be trusted to have done
+   anything, for the reason above; only reading the configuration back proves
+   it exists.
 
 6. **Verify a real install, then move `latest`** — steps 4 and 5 of the order
    above. They do not become optional just because this release was manual.
