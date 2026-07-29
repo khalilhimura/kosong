@@ -35,7 +35,18 @@ jobs:
           - { os: ubuntu-latest,    label: linux-x64-gnu }
           - { os: ubuntu-24.04-arm, label: linux-arm64-gnu }
           - { os: macos-latest,     label: darwin-arm64 }
-          - { os: macos-13,         label: darwin-x64 }
+          # Intel macOS. `macos-13` was the obvious label and is retired — it
+          # was withdrawn in December 2025, and a job requesting it does not
+          # fail, it queues for a runner that will never arrive. The first run
+          # of this workflow sat there for twenty minutes while the other three
+          # finished in seconds.
+          #
+          # `macos-15-intel` is the replacement, and it is the last of its kind:
+          # GitHub retires Intel macOS entirely when the macOS 15 image goes in
+          # autumn 2027. At that point `darwin-x64` becomes a target nothing can
+          # execute, and continuing to publish it is a decision to make then
+          # rather than discover.
+          - { os: macos-15-intel,   label: darwin-x64 }
 
     steps:
       - uses: actions/setup-node@v4
