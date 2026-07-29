@@ -130,14 +130,28 @@ jobs:
           # 2. entry order, pinned by sorting rather than trusting readdir.
           # 3. the gzip timestamp, removed by `-n`.
           #
-          # Ownership is deliberately left alone. It does not vary between runs
-          # on a given runner image, and normalising it portably needs an OS
-          # branch — bsdtar takes `--uid`, GNU tar takes `--owner`, and neither
-          # accepts the other's spelling.
+          # 4. ownership, which is otherwise the building user, so an archive
+          #    built anywhere else differed even with identical contents.
+          #
+          # This makes the *archive* deterministic given identical contents. It
+          # does not make an independent rebuild match: the binary inside still
+          # embeds absolute paths from the machine that built it — CI's copy
+          # carries /home/runner/.cargo/..., a laptop's carries its own — so the
+          # two differ before tar is involved at all. Closing that needs
+          # `trim-paths` in the release profile, which is a separate change with
+          # its own effect on backtraces.
+          #
+          # An earlier version of this comment claimed ownership could not be
+          # normalised portably, because bsdtar takes `--uid` and GNU tar takes
+          # `--owner`. That was asserted, not tested. bsdtar honours
+          # `--owner=0 --group=0 --numeric-owner` too — checked by reading the
+          # uid back out of an archive it wrote — so one invocation serves both
+          # and there is no OS branch here.
           STAMP="$(git log -1 --format=%cd --date=format:'%Y%m%d%H%M.%S')"
           find "dist/$NAME" -exec touch -t "$STAMP" {} +
           ( cd dist && ls -A "$NAME" | sort | sed "s|^|$NAME/|" > .filelist )
-          ( cd dist && tar -cf - -T .filelist | gzip -n > "$NAME.tar.gz" && rm -f .filelist )
+          ( cd dist && tar --owner=0 --group=0 --numeric-owner -cf - -T .filelist \
+              | gzip -n > "$NAME.tar.gz" && rm -f .filelist )
 
           # A checksum per artifact, so a download can be verified on its own.
           ( cd dist && shasum -a 256 "$NAME.tar.gz" > "$NAME.tar.gz.sha256" )
