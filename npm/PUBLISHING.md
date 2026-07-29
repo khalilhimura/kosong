@@ -18,9 +18,28 @@ repair is a new version rather than a fix.
 4. **Verify a real install**, on macOS and on Linux.
 5. **Then move the tag:** `npm dist-tag add kosong@<version> latest`.
 
-Step 3 is what makes this recoverable. `latest` is what `npm install -g kosong`
-resolves, so until the tag moves, a partial publish is invisible to users and
-the fix is to publish the missing package and move the tag once.
+Step 3 is what makes this recoverable — **from the second release onward.**
+`latest` is what `npm install -g kosong` resolves, so until the tag moves, a
+partial publish of a new version is invisible to users and the fix is to publish
+the missing package and move the tag once.
+
+### `--tag next` does not protect a package's first publish
+
+npm sets `latest` on a package's **first** published version whatever `--tag`
+says. Observed on the 0.2.0 publish: every one of the five came out of
+`npm publish --tag next` carrying `next` *and* `latest`, and
+`npm install -g kosong` resolved the moment the launcher landed — not when the
+tag was moved afterwards.
+
+So during a bootstrap the publish order is not a nicety with a safety net
+behind it; it is the only thing standing between a user and a broken install.
+Launcher last, always. Publish it first with a platform package missing and
+`latest` points at something that installs cleanly and cannot run, with no tag
+to hold it back.
+
+This applies to any new package, so it will apply again the day a platform is
+added — a new `@thefutureissolo/kosong-win32-x64` is a first publish even
+though kosong is not.
 
 **Steps 4 and 5 are not automated on purpose.** A green workflow says the
 tarballs uploaded, not that the binary inside them runs. Nothing about the
