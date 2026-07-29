@@ -10,6 +10,11 @@ and environment variables — will not change without being named here.
 
 ## Unreleased
 
+## [0.2.0] — 2026-07-29
+
+kosong can be installed with npm. Everything else in this release is a fix to
+publishing, which stopped working correctly the second time you used it.
+
 ### Added
 
 - kosong can be installed with npm. `npm install -g kosong` now works, and
@@ -196,6 +201,7 @@ archive until it does.
 - [`guide/course-outline.md`](guide/course-outline.md) — the five course
   modules mapped to real commands and the artefacts they produce.
 
+[0.2.0]: https://github.com/khalilhimura/kosong/releases/tag/v0.2.0
 [0.1.2]: https://github.com/khalilhimura/kosong/releases/tag/v0.1.2
 [0.1.1]: https://github.com/khalilhimura/kosong/releases/tag/v0.1.1
 [0.1.0]: https://github.com/khalilhimura/kosong/releases/tag/v0.1.0
