@@ -10,6 +10,11 @@ and environment variables — will not change without being named here.
 
 ## Unreleased
 
+## [0.2.1] — 2026-07-29
+
+A release you can rebuild and check for yourself. Nothing about using `kosong`
+changes.
+
 ### Changed
 
 - Release archives are now built reproducibly. Building the same tag twice used
@@ -214,6 +219,7 @@ archive until it does.
 - [`guide/course-outline.md`](guide/course-outline.md) — the five course
   modules mapped to real commands and the artefacts they produce.
 
+[0.2.1]: https://github.com/khalilhimura/kosong/releases/tag/v0.2.1
 [0.2.0]: https://github.com/khalilhimura/kosong/releases/tag/v0.2.0
 [0.1.2]: https://github.com/khalilhimura/kosong/releases/tag/v0.1.2
 [0.1.1]: https://github.com/khalilhimura/kosong/releases/tag/v0.1.1
