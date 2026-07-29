@@ -98,7 +98,34 @@ jobs:
           cp LICENSE "dist/$NAME/"
           cp README.md SECURITY.md CHANGELOG.md "dist/$NAME/" 2>/dev/null || true
 
-          tar -C dist -czf "dist/$NAME.tar.gz" "$NAME"
+          # --- A reproducible archive ------------------------------------
+          #
+          # `tar -czf` embeds three things that change between runs of the same
+          # source, so every rebuild produced a different checksum. Re-tagging
+          # v0.2.0 made that visible: all four archives changed hash while every
+          # file inside them, the binaries included, was byte-identical. The
+          # gzip headers were 718 seconds apart — the gap between the two runs.
+          #
+          # That matters for a project that ships checksums and tells people to
+          # check them. A checksum you cannot reproduce proves the download
+          # matches what was published, but nothing about what was published
+          # matching the source. These three lines close that.
+          #
+          # 1. mtimes, taken from the commit being built. `git log --date=format`
+          #    emits `touch -t` syntax directly, which `date` cannot do portably:
+          #    BSD wants `-r EPOCH`, GNU wants `-d @EPOCH`, and the runners are
+          #    one of each.
+          # 2. entry order, pinned by sorting rather than trusting readdir.
+          # 3. the gzip timestamp, removed by `-n`.
+          #
+          # Ownership is deliberately left alone. It does not vary between runs
+          # on a given runner image, and normalising it portably needs an OS
+          # branch — bsdtar takes `--uid`, GNU tar takes `--owner`, and neither
+          # accepts the other's spelling.
+          STAMP="$(git log -1 --format=%cd --date=format:'%Y%m%d%H%M.%S')"
+          find "dist/$NAME" -exec touch -t "$STAMP" {} +
+          ( cd dist && ls -A "$NAME" | sort | sed "s|^|$NAME/|" > .filelist )
+          ( cd dist && tar -cf - -T .filelist | gzip -n > "$NAME.tar.gz" && rm -f .filelist )
 
           # A checksum per artifact, so a download can be verified on its own.
           ( cd dist && shasum -a 256 "$NAME.tar.gz" > "$NAME.tar.gz.sha256" )
