@@ -12,7 +12,7 @@ name = "kosong"
 path = "src/main.rs"
 
 [dependencies]
-kosong-core = { path = "../kosong-core", version = "0.1.0" }
+kosong-core = { workspace = true }
 clap = { workspace = true }
 camino = { workspace = true }
 serde = { workspace = true }
