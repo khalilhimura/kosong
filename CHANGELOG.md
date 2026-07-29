@@ -10,6 +10,19 @@ and environment variables — will not change without being named here.
 
 ## Unreleased
 
+### Changed
+
+- Release archives are now built reproducibly. Building the same tag twice used
+  to produce two different checksums, because `tar` and `gzip` record the moment
+  they ran alongside the files. Nothing was wrong with the downloads — the
+  published `SHA256SUMS` always matched what was published — but it meant nobody
+  could rebuild a release and confirm they had got the same thing. Timestamps
+  now come from the commit being built rather than the clock, so a rebuild of
+  the same tag on the same platform produces identical bytes.
+
+  This changes nothing about how you verify a download; `shasum -a 256 -c
+  SHA256SUMS --ignore-missing` works exactly as before.
+
 ## [0.2.0] — 2026-07-29
 
 kosong can be installed with npm. Everything else in this release is a fix to
