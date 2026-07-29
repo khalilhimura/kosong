@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/kosong-core", "crates/kosong-cli"]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 rust-version = "1.85"
 license = "Apache-2.0"
@@ -15,7 +15,7 @@ repository = "https://github.com/khalilhimura/kosong"
 # bumping the workspace to 0.2.0 while this said "0.1.0" failed the whole build
 # with `failed to select a version for the requirement kosong-core = "^0.1.0"` —
 # a message that never mentions the version bump that caused it.
-kosong-core = { path = "crates/kosong-core", version = "0.2.0" }
+kosong-core = { path = "crates/kosong-core", version = "0.2.1" }
 
 serde = { version = "1", features = ["derive"] }
 serde_yaml_ng = "0.10"
