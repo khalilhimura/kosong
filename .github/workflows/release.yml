@@ -217,7 +217,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p npm/tarballs
-          for package in npm/dist/@kosong/* npm/dist/kosong; do
+          for package in npm/dist/@*/* npm/dist/kosong; do
             ( cd "$package" && npm pack --pack-destination "$GITHUB_WORKSPACE/npm/tarballs" )
           done
           ls -l npm/tarballs
@@ -254,7 +254,7 @@ jobs:
             ( cd "$1" && npm publish --provenance --access public --tag next )
           }
 
-          for package in npm/dist/@kosong/*; do publish "$package"; done
+          for package in npm/dist/@*/*; do publish "$package"; done
           publish npm/dist/kosong
 
       - name: How to finish the release
