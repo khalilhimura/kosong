@@ -136,6 +136,15 @@ unscoped name has gone, the launcher, the docs and this file all change.
    which reads like a permissions problem on a package that plainly exists,
    rather than a setup step that never ran.
 
+   **Authenticate before the loop, interactively.** `npm trust` opens a browser
+   to sign in. Inside a `for` loop with `--yes` that prompt arrives on the first
+   package and the remaining four run past whatever happens to it. Configuring
+   all five in one loop looked like it worked and produced nothing:
+   `npm trust list` later reported `No trust configurations found`.
+
+   So do one package by hand, complete the browser sign-in, and only then loop
+   over the rest:
+
    ```bash
    if [ "$(printf '11.15.0\n%s\n' "$(npm --version)" | sort -V | head -1)" != "11.15.0" ]; then
      echo "npm $(npm --version) is too old for \`npm trust\` (needs 11.15.0+)." >&2
@@ -143,11 +152,19 @@ unscoped name has gone, the launcher, the docs and this file all change.
      exit 1
    fi
 
-   # Read the names out of what was built, rather than retyping five of them.
+   # One, interactively. Finish the browser sign-in it opens.
+   npm trust github @thefutureissolo/kosong-darwin-arm64 \
+     --file release.yml --repo khalilhimura/kosong --allow-publish
+
+   # Confirm that one took before doing anything else.
+   npm trust list @thefutureissolo/kosong-darwin-arm64
+
+   # Then the remaining four, on the authenticated session.
    for p in $(node -p "
      const m = require('./npm/dist/kosong/package.json');
      [...Object.values(m.kosong.platforms), m.name].join(' ')
    "); do
+     [ "$p" = "@thefutureissolo/kosong-darwin-arm64" ] && continue
      npm trust github "$p" --file release.yml --repo khalilhimura/kosong \
        --allow-publish --yes
    done
@@ -161,8 +178,9 @@ unscoped name has gone, the launcher, the docs and this file all change.
    done
    ```
 
-   The second loop is the point. The first one cannot be trusted to have done
-   anything, for the reason above; only reading the configuration back proves
+   The read-back is the point. The configuring commands cannot be trusted to
+   have done anything, for the reasons above; only reading the configuration
+   back proves
    it exists.
 
 6. **Verify a real install, then move `latest`** — steps 4 and 5 of the order
