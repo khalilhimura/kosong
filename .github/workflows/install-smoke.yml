@@ -1,0 +1,119 @@
+name: Install smoke
+
+# Installs kosong from the npm registry and runs it, on every platform it is
+# published for.
+#
+# This is step 4 of npm/PUBLISHING.md — "verify a real install" — which was
+# prose until now, and in practice meant one platform on whatever laptop was to
+# hand. Two of the four platform packages had never been executed by anyone at
+# the point this was written: their binaries were only ever compared by hash
+# against the release archives.
+#
+# It deliberately installs from the registry rather than from artifacts. Every
+# other check in this repository tests something built in the same run; this one
+# tests what a stranger actually gets.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: dist-tag or version to install
+        type: string
+        default: next
+
+permissions: {}
+
+jobs:
+  install:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # One runner per published platform package.
+          - { os: ubuntu-latest,    label: linux-x64-gnu }
+          - { os: ubuntu-24.04-arm, label: linux-arm64-gnu }
+          - { os: macos-latest,     label: darwin-arm64 }
+          - { os: macos-13,         label: darwin-x64 }
+
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          # No `registry-url`. It writes an .npmrc with a placeholder auth
+          # token and `always-auth`, which broke three tagged releases; nothing
+          # here needs to authenticate at all.
+
+      - name: Install from the registry
+        shell: bash
+        run: npm install -g "kosong@${{ inputs.tag }}"
+
+      - name: It runs, and it is the version the tag points at
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED="$(npm view "kosong@${{ inputs.tag }}" version)"
+          echo "tag ${{ inputs.tag }} -> $EXPECTED"
+
+          ACTUAL="$(kosong --version | awk '{print $2}')"
+          echo "kosong --version -> $ACTUAL"
+
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::installed $ACTUAL but the tag points at $EXPECTED"
+            exit 1
+          fi
+
+      - name: The launcher ran, not the binary directly
+        shell: bash
+        # A platform package that declares `bin` gets linked over the launcher,
+        # and then a smoke test exercises the binary while appearing to test the
+        # whole install. That happened once during development and passed.
+        run: |
+          set -euo pipefail
+          BIN="$(command -v kosong)"
+          TARGET="$(node -e 'console.log(require("fs").realpathSync(process.argv[1]))' "$BIN")"
+          echo "kosong -> $TARGET"
+          case "$TARGET" in
+            *"/kosong/bin/kosong.js") echo "launcher: yes" ;;
+            *) echo "::error::kosong resolves to $TARGET, not the launcher"; exit 1 ;;
+          esac
+
+      - name: The platform package for this runner is the one that loaded
+        shell: bash
+        run: |
+          set -euo pipefail
+          LAUNCHER="$(node -e 'console.log(require("fs").realpathSync(process.argv[1]))' "$(command -v kosong)")"
+          MANIFEST="$(dirname "$(dirname "$LAUNCHER")")/package.json"
+          node -e '
+            const m = require(process.argv[1]);
+            const want = process.argv[2];
+            const got = Object.keys(m.kosong.platforms).filter(k => k === want);
+            if (got.length !== 1) {
+              console.error(`::error::no platform entry for ${want}`);
+              process.exit(1);
+            }
+            console.log(`${want} -> ${m.kosong.platforms[want]}`);
+          ' "$MANIFEST" "${{ matrix.label }}"
+
+      - name: A real command, not just --version
+        shell: bash
+        run: |
+          set -euo pipefail
+          kosong doctor --json | tee /tmp/doctor.json
+          node -e '
+            const d = require("/tmp/doctor.json");
+            if (d.healthy !== true) { console.error("::error::doctor reports unhealthy"); process.exit(1); }
+            if (d.schema !== 1) { console.error(`::error::unexpected schema ${d.schema}`); process.exit(1); }
+          '
+
+      - name: It makes a page, which is the whole point
+        shell: bash
+        run: |
+          set -euo pipefail
+          WORK="$(mktemp -d)"
+          export KOSONG_CONFIG_DIR="$WORK/config" KOSONG_SESSION_FILE="$WORK/session" NO_COLOR=1
+          kosong --workspace "$WORK" new --title "Install Smoke"
+          kosong --workspace "$WORK" status --json | grep -q '"valid": true'
+          test -f "$WORK/kosong.md"
+          echo "made a page and read it back"
