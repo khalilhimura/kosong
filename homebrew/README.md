@@ -15,26 +15,40 @@ target does not fail to build — it installs on three platforms and tells the
 fourth that kosong is unavailable, which is a worse thing to publish than an
 error.
 
-## The formula cannot live here
+## The tap
 
-A Homebrew tap must be its own repository, named `homebrew-<something>`. So
-`khalilhimura/homebrew-kosong` would give:
+A Homebrew tap must be its own repository, named `homebrew-<something>`. The
+tap is <https://github.com/khalilhimura/homebrew-tap>, and installing is:
 
 ```bash
-brew tap khalilhimura/kosong
+brew tap khalilhimura/tap
+brew trust khalilhimura/tap
 brew install kosong
 ```
 
-That repository does not exist yet, and creating it is not something this
-repository can do.
+**The `brew trust` line is required and easy to miss.** Homebrew refuses to
+load formulae from a tap outside its own repositories until it is trusted, and
+`brew install` stops with an error rather than installing anything.
+
+This was found late and only by luck. Every check before it used a tap created
+locally with `brew tap-new`, which Homebrew trusts implicitly — `style`,
+`fetch`, `install` and `test` all passed. The first install from a tap *cloned
+from GitHub* failed, which is the only sequence a user ever performs. Verify a
+tap by untapping and retapping from the remote; a local tap proves the formula,
+not the install.
+
+The repository holds `Formula/kosong.rb` and a trimmed `tests.yml`.
+`brew tap-new` also scaffolds `publish.yml`, which exists to pull bottles;
+kosong ships a prebuilt binary and compiles nothing, so it was deleted rather
+than left looking load-bearing.
 
 ## Getting the formula into the tap, and what each way costs
 
-**Manual, and the recommended start.** After a release, run the generator, and
-commit the result to the tap:
+**Manual, and what is in use.** After a release, regenerate and commit:
 
 ```bash
-node homebrew/formula.mjs <version> --out Formula/kosong.rb   # in the tap repo
+node homebrew/formula.mjs <version> \
+  --out "$(brew --repository)/Library/Taps/khalilhimura/homebrew-tap/Formula/kosong.rb"
 ```
 
 One command and one commit per release. No credential exists anywhere. For a

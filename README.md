@@ -12,6 +12,33 @@ ordinary you own: a Markdown file, a Git repository, and a static website.
 
 ## Install
 
+Three ways. They install the same binary, from the same release, checked
+against the same published checksum.
+
+**Homebrew**, on macOS or Linux:
+
+```bash
+brew tap khalilhimura/tap
+brew trust khalilhimura/tap
+brew install kosong
+```
+
+The middle line is not optional and not a formality: Homebrew refuses to load
+formulae from taps outside its own repositories until you say you trust them.
+Skip it and `brew install` stops with an error rather than installing anything.
+
+**npm**, if you already have Node:
+
+```bash
+npm install -g kosong
+```
+
+`npx kosong start` runs it without installing anything permanently. Installed
+this way, `kosong` is a small script that starts the real binary, which costs a
+fraction of a second per command.
+
+**The installer**, which needs neither Homebrew nor Node:
+
 ```bash
 curl -fsSL https://kosong.thefutureissolo.com/install.sh | sh
 ```
@@ -24,6 +51,10 @@ verify it yourself:
 ```bash
 shasum -a 256 -c SHA256SUMS --ignore-missing
 ```
+
+macOS and Linux, on Intel and ARM. Windows and Alpine are not among them, and
+on those the install stops with a message saying so rather than leaving you
+something that cannot run.
 
 ## Your first page
 
