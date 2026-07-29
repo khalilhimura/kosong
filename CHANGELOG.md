@@ -12,6 +12,14 @@ and environment variables — will not change without being named here.
 
 ### Added
 
+- kosong now runs on Alpine and other musl Linux. `npm install -g kosong` and
+  the installer both pick the right build for your system, and the binaries are
+  statically linked, so nothing else needs installing.
+
+  Before this, musl systems were told kosong was unavailable — or, through the
+  installer, were handed a glibc build that downloaded and verified correctly
+  and then would not start.
+
 - kosong can be installed with Homebrew.
 
   ```bash
