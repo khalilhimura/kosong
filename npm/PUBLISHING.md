@@ -1,7 +1,7 @@
 # Publishing to npm
 
-The `npm` job in `.github/workflows/release.yml` does steps 1–3 below. Steps 4
-and 5 are yours, deliberately.
+The `npm` job in `.github/workflows/release.yml` does steps 1–3 below, and the
+`verify-install` job does step 4. Step 5 is yours, deliberately.
 
 ## The order is not a detail
 
@@ -15,13 +15,36 @@ repair is a new version rather than a fix.
 2. **The launcher last.** Its `optionalDependencies` pin exact versions, so it
    must not exist before the things it names.
 3. **Everything under `--tag next`**, never straight to `latest`.
-4. **Verify a real install**, on macOS and on Linux.
+4. **Verify a real install**, on every platform published for.
 5. **Then move the tag:** `npm dist-tag add kosong@<version> latest`.
 
 Step 3 is what makes this recoverable — **from the second release onward.**
 `latest` is what `npm install -g kosong` resolves, so until the tag moves, a
 partial publish of a new version is invisible to users and the fix is to publish
 the missing package and move the tag once.
+
+### Step 5 moves one tag, and the platform packages' tags are ignored
+
+`latest` on `@thefutureissolo/kosong-<platform>` is deliberately left wherever
+npm happens to put it. Only the launcher's tag is moved, because only the
+launcher's tag decides anything: `npm install -g kosong` resolves the launcher
+by tag, and the launcher then names its platform packages at **exact versions**
+in `optionalDependencies`. npm picks one by `os` and `cpu` from those pins. No
+resolution path consults a platform package's `latest`.
+
+So expect `npm view @thefutureissolo/kosong-darwin-arm64` to report something
+older than the current release. That is cosmetic, and it is the documented
+behaviour rather than a tag someone forgot.
+
+This was worth stating because it looks exactly like neglect. Four of the six
+platform packages sat at `latest` = 0.2.0 through the 0.3.0 and 0.4.0 releases —
+three releases of apparent drift — and nothing broke, on any platform, because
+nothing reads them. They were aligned to 0.4.0 on 2026-07-30 for tidiness, not
+because anything needed it, and they will drift again at the next release.
+
+If you would rather they tracked the launcher, that is a step 5 loop over the
+names in `npm/dist/kosong/package.json`'s `kosong.platforms` — but it is
+housekeeping, and a release must never wait on it.
 
 ### `--tag next` does not protect a package's first publish
 
@@ -41,10 +64,22 @@ This applies to any new package, so it will apply again the day a platform is
 added — a new `@thefutureissolo/kosong-win32-x64` is a first publish even
 though kosong is not.
 
-**Steps 4 and 5 are not automated on purpose.** A green workflow says the
-tarballs uploaded, not that the binary inside them runs. Nothing about the
-publish proves that `kosong --version` works on a machine that is not a GitHub
-runner, and once `latest` moves, it is users who find out.
+**Step 4 is automated. Step 5 is not, on purpose.**
+
+A green publish says the tarballs uploaded, not that the binary inside them
+runs. That gap used to be prose here, and in practice meant one platform on
+whatever laptop was to hand. `install-smoke.yml` closes it: `release.yml` calls
+it as `verify-install` once a publish has actually happened, and it installs
+from the registry and runs kosong on every platform published for. It checks
+`next`, which is where the publish step puts things and where `latest` is not
+yet, so a bad release is caught while it is still invisible to users.
+
+What it cannot tell you is that kosong works somewhere that is not a GitHub
+runner. Six runners agreeing is six versions of the same environment, so a
+release that only ever ran there is still worth installing by hand once.
+
+Step 5 stays manual because moving `latest` is the moment a release becomes
+what everyone gets, and nothing above proves a human looked.
 
 ## What the workflow already guarantees
 
@@ -80,15 +115,21 @@ one is different.
 
 Trusted publishing is configured per package, and npm's own prerequisites for
 `npm trust` say it plainly: **"The package you're configuring must already
-exist on the npm registry."** Five packages that have never been published
-cannot be configured, so the first publish has to happen some other way.
+exist on the npm registry."** A package that has never been published cannot be
+configured, so its first publish has to happen some other way.
 
 Do it by hand, from a machine, once. The alternative — a publish token in
 repository secrets for one release — puts a credential in CI that this project
 has otherwise avoided entirely, to save one manual afternoon.
 
-Checked against the registry on 2026-07-29: `kosong` is unclaimed, and nothing
-is published under the `@thefutureissolo` scope. Re-check both before starting; if the
+**This already happened.** `kosong` was unclaimed and the `@thefutureissolo`
+scope was empty when it was checked on 2026-07-29; the bootstrap below was then
+carried out and both are now populated. What follows is kept because it is the
+procedure for **any** package that has never been published, which is what a
+newly added platform is — see the note above about a first publish taking
+`latest` whatever `--tag` says.
+
+If you are ever starting over on a new name, re-check the registry first: if the
 unscoped name has gone, the launcher, the docs and this file all change.
 
 1. **Create or confirm the `@thefutureissolo` org** on npmjs, owned by the publishing account. Free
@@ -102,10 +143,11 @@ unscoped name has gone, the launcher, the docs and this file all change.
    node npm/verify.mjs          # the packaging checks, and it builds npm/dist as a side effect
    ```
 
-   For a real release use the four published binaries rather than one local
-   build — download the release archives and pass `--artifacts`, exactly as the
-   workflow does. A local build produces only the host's platform, and
-   `build.mjs` will refuse to write a launcher from an incomplete set.
+   For a real release use the published binaries — every target `build.mjs`
+   marks `released` — rather than one local build. Download the release archives
+   and pass `--artifacts`, exactly as the workflow does. A local build produces
+   only the host's platform, and `build.mjs` will refuse to write a launcher
+   from an incomplete set.
 
 4. **Publish, platform packages first, launcher last, all to `next`:**
 
@@ -118,13 +160,14 @@ unscoped name has gone, the launcher, the docs and this file all change.
    `--access public` is not optional. Scoped packages are private by default
    and the first publish fails without it.
 
-5. **Configure trusted publishing on all five.**
+5. **Configure trusted publishing on every package** — each platform package
+   and the launcher.
 
    **Check the npm version first, and do not skip the check.** `npm trust`
    arrived in npm 11.15.0. An older npm answers an unknown command by printing
-   `Unknown command: "trust"` and **exiting 0** — so a loop over five packages
-   reports success while configuring nothing at all, and `--yes` means there is
-   not even a prompt missing to notice.
+   `Unknown command: "trust"` and **exiting 0** — so a loop reports success
+   while configuring nothing at all, and `--yes` means there is not even a
+   prompt missing to notice.
 
    That is exactly what happened here: npm 10.9.8 silently configured nothing,
    and the failure surfaced only at the next tagged release as
@@ -138,8 +181,8 @@ unscoped name has gone, the launcher, the docs and this file all change.
 
    **Authenticate before the loop, interactively.** `npm trust` opens a browser
    to sign in. Inside a `for` loop with `--yes` that prompt arrives on the first
-   package and the remaining four run past whatever happens to it. Configuring
-   all five in one loop looked like it worked and produced nothing:
+   package and every one after it runs past whatever happens to it. Configuring
+   them all in one loop looked like it worked and produced nothing:
    `npm trust list` later reported `No trust configurations found`.
 
    So do one package by hand, complete the browser sign-in, and only then loop
@@ -159,27 +202,40 @@ unscoped name has gone, the launcher, the docs and this file all change.
      exit 1
    fi
 
+   # Every package the launcher names, plus the launcher. Read from the built
+   # manifest rather than typed out: a hand-kept list here would have missed
+   # the two musl packages the day they were added, and the failure would not
+   # have surfaced until the release after that.
+   #
+   # Called in `$(...)` rather than expanded from a variable, deliberately.
+   # zsh does not word-split an unquoted `$VAR`, so `for p in $PACKAGES` runs
+   # once with every name glued into one argument — and zsh is the shell this
+   # is pasted into on macOS. Command substitution splits in zsh, bash and sh
+   # alike, so this form is the portable one.
+   packages() {
+     node -p "
+       const m = require('./npm/dist/kosong/package.json');
+       [...Object.values(m.kosong.platforms), m.name].join(' ')
+     "
+   }
+
+   FIRST=$(packages | cut -d' ' -f1)
+
    # One, interactively. Finish the browser sign-in it opens.
-   npm trust github @thefutureissolo/kosong-darwin-arm64 \
+   npm trust github "$FIRST" \
      --file release.yml --repo khalilhimura/kosong --allow-publish
 
    # Confirm that one took before doing anything else.
-   npm trust list @thefutureissolo/kosong-darwin-arm64
+   npm trust list "$FIRST"
 
-   # Then the remaining four, on the authenticated session.
-   for p in @thefutureissolo/kosong-darwin-x64 \
-            @thefutureissolo/kosong-linux-x64-gnu \
-            @thefutureissolo/kosong-linux-arm64-gnu \
-            kosong; do
-     npm trust github "$p" --file release.yml --repo khalilhimura/kosong \
-       --allow-publish --yes
+   # Then the rest, on the authenticated session.
+   for p in $(packages); do
+     [ "$p" = "$FIRST" ] || npm trust github "$p" --file release.yml \
+       --repo khalilhimura/kosong --allow-publish --yes
    done
 
-   # Prove it took, rather than trusting five commands that cannot fail loudly.
-   for p in $(node -p "
-     const m = require('./npm/dist/kosong/package.json');
-     [...Object.values(m.kosong.platforms), m.name].join(' ')
-   "); do
+   # Prove it took, rather than trusting commands that cannot fail loudly.
+   for p in $(packages); do
      echo "--- $p"; npm trust list "$p"
    done
    ```
@@ -205,8 +261,8 @@ launcher is there, the platform packages it names are too. Only a `404` counts
 as "not yet"; any other answer, including a network failure, fails the step,
 because silently skipping a real publish is worse than a red run.
 
-So there is nothing to turn on afterwards. Once the five packages exist and
-`npm trust` has run, the next tag publishes on its own.
+So there is nothing to turn on afterwards. Once the packages exist and
+`npm trust` has run against each, the next tag publishes on its own.
 
 ### What this costs, stated plainly
 
