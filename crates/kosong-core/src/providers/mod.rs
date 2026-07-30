@@ -106,6 +106,11 @@ pub struct OperationPlan {
     /// One line, in plain language.
     pub summary: String,
     pub executable: String,
+    /// Where `executable` was found, when that is not left to `PATH`.
+    ///
+    /// `None` — the usual case — means the disclosure says nothing extra, so a
+    /// machine with no project-local install reads exactly what it read before.
+    pub resolved: Option<Utf8PathBuf>,
     pub args: Vec<String>,
     pub cwd: Utf8PathBuf,
     /// Local files this will read, write, or commit.
@@ -117,6 +122,15 @@ pub struct OperationPlan {
 }
 
 impl OperationPlan {
+    /// Records where the allowlisted program was actually found.
+    ///
+    /// [`Self::display_command`] is left alone: the command line still reads as
+    /// the tool a person recognises, and the path is disclosed on its own line.
+    pub fn found_at(mut self, path: impl Into<Utf8PathBuf>) -> Self {
+        self.resolved = Some(path.into());
+        self
+    }
+
     /// The invocation as a person would read it, redacted.
     pub fn display_command(&self) -> String {
         format_command(&self.executable, &self.args)
@@ -130,6 +144,13 @@ impl OperationPlan {
             format!("  run     {}", self.display_command()),
             format!("  in      {}", self.cwd),
         ];
+
+        // Only when it is not the plain `PATH` hit. §12.4 asks the disclosure to
+        // describe what will really run, and where two copies of a tool could be
+        // on the machine, the name alone does not say which one this is.
+        if let Some(resolved) = &self.resolved {
+            lines.push(format!("  using   {resolved}"));
+        }
 
         if !self.files.is_empty() {
             lines.push(format!("  files   {}", self.files.len()));
@@ -180,6 +201,7 @@ pub trait Operation {
         OperationPlan {
             summary: self.summary(),
             executable: self.program().to_owned(),
+            resolved: None,
             args: self.args(),
             cwd: cwd.to_owned(),
             files: self.files(),
