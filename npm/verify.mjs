@@ -38,7 +38,21 @@ const POSIX = process.platform !== 'win32';
 
 let failures = 0;
 
+/// How many checks actually ran, reported at the end.
+///
+/// The count is not a constant anyone can write down. Nine `check()` calls run
+/// unconditionally; two more sit inside `if (POSIX)`, and one of those is a
+/// loop over four signals. So eleven call sites are fourteen checks on Unix and
+/// nine on Windows, and reading the source gives the wrong answer in two
+/// different ways at once.
+///
+/// PUBLISHING.md said "15 checks" from the day it was written until someone
+/// ran the script and counted `ok` lines. Nothing had ever compared the two.
+/// So the script reports its own total, and the prose no longer repeats one.
+let ran = 0;
+
 function check(name, body) {
+  ran += 1;
   try {
     body();
     console.log(`  ok    ${name}`);
@@ -288,7 +302,7 @@ if (POSIX) {
 
 console.log('');
 if (failures > 0) {
-  console.error(`${failures} check${failures === 1 ? '' : 's'} failed.\n`);
+  console.error(`${failures} of ${ran} check${ran === 1 ? '' : 's'} failed.\n`);
   process.exit(1);
 }
-console.log('All checks passed.\n');
+console.log(`All ${ran} checks passed.\n`);
