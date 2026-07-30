@@ -34,6 +34,38 @@ function rewriteLinks(markdown) {
   );
 }
 
+/** Matches a fenced code block, opening line to closing fence. */
+const FENCE = /^```[^\n]*\n[\s\S]*?\n```/gm;
+
+/** Deliberately loose: this asks "would Cloudflare rewrite it", not "is it valid". */
+const EMAIL = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
+
+/**
+ * Exempts code blocks from Cloudflare's Email Address Obfuscation.
+ *
+ * Scrape Shield rewrites anything email-shaped into a `[email protected]` link.
+ * In prose that is the point of the feature, and those are left alone. In a
+ * code block it corrupts a command the reader is meant to copy: `kosong login
+ * --email you@example.com` reaches a reader without JavaScript as `kosong login
+ * --email [email protected]`.
+ *
+ * The comment cannot go inside the fence. Markdown escapes it there and it
+ * renders as literal text in the code block, which is worse than the problem.
+ * So it wraps the fence at block level, where Astro passes it through to the
+ * HTML untouched — verified, and re-verified on every build by
+ * `check-email-exemptions.mjs`, since a comment silently stripped by some later
+ * upgrade would look exactly like this working.
+ *
+ * This belongs here rather than in `guide/`. Those files are read on GitHub,
+ * where `email_off` means nothing; the site's hosting is the site build's
+ * problem.
+ */
+function exemptCodeBlockEmails(markdown) {
+  return markdown.replace(FENCE, (fence) =>
+    EMAIL.test(fence) ? `<!--email_off-->\n\n${fence}\n\n<!--/email_off-->` : fence,
+  );
+}
+
 /** The first `# ` line, which every guide has. */
 function titleOf(markdown, fallback) {
   const match = markdown.match(/^#\s+(.+)$/m);
@@ -106,7 +138,11 @@ for (const name of files) {
     "",
   ].join("\n");
 
-  await writeFile(join(outDir, name), frontMatter + rewriteLinks(raw), "utf8");
+  await writeFile(
+    join(outDir, name),
+    frontMatter + exemptCodeBlockEmails(rewriteLinks(raw)),
+    "utf8",
+  );
   collected.push({ slug, title, summary });
 }
 
