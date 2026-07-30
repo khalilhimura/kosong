@@ -193,6 +193,18 @@ pub fn init(context: &Context, name: Option<String>, approval: Approval) -> CliR
         "That folder is an ordinary Astro project with an ordinary git history.\n\
          You can open it, change it, or publish it yourself without kosong.",
     );
+
+    // Said here rather than left for the publish to discover. Cloudflare's own
+    // tool is the one thing publishing cannot do without, and learning that by
+    // failing a publish means learning it after a build has been paid for.
+    if crate::tools::locate(cloudflare::PROGRAM, Some(&site_root)).is_none() {
+        ui.blank();
+        ui.say("Publishing needs Cloudflare's own tool. Set it up once, in your site folder:");
+        ui.say(format!("  cd {site_root}"));
+        ui.say("  npm i -D wrangler@latest");
+        ui.say("  npx wrangler login");
+    }
+
     ui.next_command("kosong site publish");
     Ok(())
 }
@@ -403,12 +415,15 @@ pub fn publish(context: &Context, approval: Approval) -> CliResult<()> {
     ui.heading(format!("Publishing `{}`.", state.site_name));
     ui.blank();
 
-    // 2. Refuse on unrelated uncommitted changes, per §13.3 step 3.
+    // 2. Everything this needs, before anything is fetched, built, or sent.
+    preflight(ui, &state, &site_root, approval)?;
+
+    // 3. Refuse on unrelated uncommitted changes, per §13.3 step 3.
     if git_is_available() {
         refuse_on_unrelated_changes(context, &site_root, approval)?;
     }
 
-    // 3. Render the current document into the template.
+    // 4. Render the current document into the template.
     let prepared =
         site::prepare_content(&site_root, &document, filename).map_err(map_site_error)?;
     ui.status(
@@ -420,21 +435,14 @@ pub fn publish(context: &Context, approval: Approval) -> CliResult<()> {
         ui.warn(note);
     }
 
-    // 4. Install and build.
-    if crate::tools::find_executable("npm").is_none() {
-        return Err(
-            CliError::provider("NPM_MISSING", "npm is needed to build your page")
-                .with_repair("Install Node.js from https://nodejs.org, then try again."),
-        );
-    }
-
+    // 5. Install and build. npm's presence was settled by the preflight.
     ui.say("Fetching what the build needs…");
     perform_checked(ui, &NpmOperation::Install, &site_root, approval)?;
 
     ui.say("Building…");
     let built = perform_checked(ui, &NpmOperation::Build, &site_root, approval)?;
 
-    // 5. A build can exit zero having written nothing. Deploying that would
+    // 6. A build can exit zero having written nothing. Deploying that would
     //    replace a working site with a blank one.
     if built.is_some() && !site::build_output_exists(&site_root) {
         return Err(map_site_error(SiteError::NoBuildOutput));
@@ -443,20 +451,12 @@ pub fn publish(context: &Context, approval: Approval) -> CliResult<()> {
         ui.status(Mark::Good, "built", site::BUILD_OUTPUT_DIR);
     }
 
-    // 6. Commit and push the source, so the repository matches what is live.
+    // 7. Commit and push the source, so the repository matches what is live.
     if git_is_available() {
         commit_and_push(context, &site_root, &state, approval)?;
     }
 
-    // 7. Deploy.
-    if crate::tools::locate("wrangler", Some(&site_root)).is_none() {
-        return Err(CliError::provider(
-            "WRANGLER_MISSING",
-            "wrangler is needed to publish to Cloudflare",
-        )
-        .with_repair("Install it with:\n  npm install -g wrangler\nThen run: wrangler login"));
-    }
-
+    // 8. Deploy. wrangler was settled by the preflight.
     ui.blank();
     ensure_project_exists(ui, &state, &site_root, approval)?;
 
@@ -495,6 +495,244 @@ pub fn publish(context: &Context, approval: Approval) -> CliResult<()> {
     );
     ui.next_command("kosong status");
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// The publish preflight
+// ---------------------------------------------------------------------------
+
+/// A reason `publish` cannot start.
+struct Blocker {
+    code: &'static str,
+    problem: String,
+    repair: String,
+}
+
+/// Checks everything `publish` depends on, before it fetches, builds, or sends.
+///
+/// # Why this exists
+///
+/// wrangler used to be checked at step 8, after `npm install`, the build, and
+/// the push. A first-time user paid for a full build before being told the one
+/// tool they were missing, fixed it, and paid again. Then the second attempt
+/// failed at `pages project list` with wrangler's raw "not authenticated" text,
+/// because nothing asked about sign-in — [`cloudflare::interpret_whoami`] and
+/// [`cloudflare::AuthState::repair`] existed and said the right thing, and only
+/// `doctor` ever called them. Three round trips and two wasted builds to publish
+/// one page.
+///
+/// # Everything at once
+///
+/// Problems are collected rather than returned one at a time. Being told about
+/// wrangler, fixing it, and then being told about npm is being failed twice for
+/// a single setup.
+///
+/// # What blocks and what only warns
+///
+/// wrangler and npm block: without them there is no deployment and no build, so
+/// continuing would only reach the same failure later having done more work.
+///
+/// GitHub warns. A failed push deliberately does not sink a publish — the built
+/// files are fine and the deployment is what the user asked for — so a preflight
+/// that blocked here would be stricter than the step it protects. And it is only
+/// mentioned at all when a repository was recorded, so someone who declined
+/// GitHub is not nagged at every publish.
+///
+/// # Under `--dry-run`
+///
+/// This runs. A dry run that reports what it "would" deploy while the user is
+/// signed out is a lie, and [`ensure_project_exists`] already accepts the same
+/// cost for the same reason: read-only provider calls are how a plan learns
+/// whether it is a plan at all.
+fn preflight(ui: Ui, state: &SiteState, site_root: &Utf8Path, approval: Approval) -> CliResult<()> {
+    let mut blockers = Vec::new();
+
+    if crate::tools::locate("npm", Some(site_root)).is_none() {
+        blockers.push(Blocker {
+            code: "NPM_MISSING",
+            problem: "npm is needed to build your page".into(),
+            repair: "Install Node.js from https://nodejs.org, then try again.".into(),
+        });
+    }
+
+    if crate::tools::locate(cloudflare::PROGRAM, Some(site_root)).is_none() {
+        blockers.push(wrangler_is_missing(site_root));
+    }
+
+    report(ui, blockers)?;
+
+    // Sign-in, only once wrangler is known to be there — asking a tool that is
+    // absent produces a spawn failure, not an answer.
+    check_cloudflare_sign_in(ui, state, site_root, approval)?;
+
+    if state.github_repo.is_some() {
+        warn_about_github(ui, site_root, approval);
+    }
+
+    Ok(())
+}
+
+/// Turns collected blockers into one failure, naming all of them.
+fn report(ui: Ui, mut blockers: Vec<Blocker>) -> CliResult<()> {
+    match blockers.len() {
+        0 => Ok(()),
+        // One problem reads better as the error itself than as a list of one.
+        1 => {
+            let blocker = blockers.remove(0);
+            Err(CliError::provider(blocker.code, blocker.problem).with_repair(blocker.repair))
+        }
+        _ => {
+            for blocker in &blockers {
+                ui.status(Mark::Bad, &blocker.problem, "");
+                ui.blank();
+                for line in blocker.repair.lines() {
+                    ui.say(format!("    {line}"));
+                }
+                ui.blank();
+            }
+            Err(CliError::provider(
+                "PREFLIGHT_FAILED",
+                format!(
+                    "{} things need setting up before you can publish",
+                    blockers.len()
+                ),
+            )
+            .with_repair("Each ✖ above says what to do. Then run: kosong site publish"))
+        }
+    }
+}
+
+/// What to tell someone whose wrangler kosong cannot find.
+///
+/// Two different failures wear the same "not found". Telling them apart is the
+/// difference between an actionable message and a baffling one: an install that
+/// reported success and then vanished is not the same problem as no install.
+fn wrangler_is_missing(site_root: &Utf8Path) -> Blocker {
+    let install = format!(
+        "Install it into your site folder, the way Cloudflare recommends:\n  \
+         cd {site_root}\n  npm i -D wrangler@latest\n  npx wrangler login"
+    );
+
+    match crate::tools::unreachable_install(cloudflare::PROGRAM) {
+        Some(path) => {
+            let folder = path
+                .parent()
+                .map_or_else(|| path.clone(), Utf8Path::to_owned);
+            Blocker {
+                code: "WRANGLER_UNREACHABLE",
+                problem: "wrangler is installed, but your shell cannot find it".into(),
+                repair: format!(
+                    "kosong found it here:\n  {path}\n\
+                     \n\
+                     But this folder is not in your PATH, so nothing can run it by name:\n  \
+                     {folder}\n\
+                     \n\
+                     That is why `wrangler login` says \"command not found\" even though\n\
+                     `npm install -g wrangler` said it worked. A folder like that can also\n\
+                     belong to an application, and an application update can quietly remove\n\
+                     everything installed into it.\n\
+                     \n\
+                     {install}"
+                ),
+            }
+        }
+        None => Blocker {
+            code: "WRANGLER_MISSING",
+            problem: "wrangler is needed to publish to Cloudflare".into(),
+            repair: format!(
+                "kosong looked in:\n  {local}\n  every folder in your PATH\n\n{install}",
+                local = site_root.join(crate::tools::LOCAL_BIN),
+            ),
+        },
+    }
+}
+
+/// Stops a publish by someone who is not signed in to Cloudflare.
+///
+/// Only [`cloudflare::AuthState::SignedOut`] stops it. `Unknown` warns and
+/// carries on: `wrangler whoami` validates its token over the network, so
+/// offline, rate limited, and a future wrangler that rewords its output all land
+/// there — and a preflight that failed closed on unrecognised output would block
+/// every user at once on the strength of a string match. The deploy then
+/// produces the real error, which is the outcome that was already acceptable.
+///
+/// Skipped entirely for a site that has published before. A successful
+/// deployment is proof wrangler was signed in, and re-establishing that costs a
+/// process start and a network round trip on every publish — charged to the
+/// people who least need it. If the sign-in has since lapsed, the deploy says
+/// so.
+fn check_cloudflare_sign_in(
+    ui: Ui,
+    state: &SiteState,
+    site_root: &Utf8Path,
+    approval: Approval,
+) -> CliResult<()> {
+    if state.last_deployment_url.is_some() {
+        return Ok(());
+    }
+
+    let Some(result) = perform(ui, &CloudflareOperation::WhoAmI, site_root, approval)? else {
+        return Ok(());
+    };
+
+    match cloudflare::interpret_whoami(result.exit_code, &result.combined_output()) {
+        cloudflare::AuthState::SignedIn => Ok(()),
+        cloudflare::AuthState::SignedOut => Err(CliError::provider(
+            "WRANGLER_SIGNED_OUT",
+            "wrangler is not signed in to Cloudflare",
+        )
+        .with_repair(
+            "Nothing has been built or published yet.\n\
+             \n\
+             Sign in, from your site folder:\n  \
+             npx wrangler login\n\
+             \n\
+             That opens your browser. Then run: kosong site publish",
+        )),
+        cloudflare::AuthState::Unknown => {
+            ui.status(
+                Mark::Warn,
+                "could not tell whether wrangler is signed in",
+                "carrying on",
+            );
+            ui.say("If the publish fails, wrangler's own message will say why.");
+            Ok(())
+        }
+    }
+}
+
+/// Warns about GitHub. Never blocks.
+///
+/// Signing in to GitHub and signing in to git are two different things, and it
+/// is the second that lets `git push` work — which is why the repair names
+/// `gh auth setup-git` rather than stopping at `gh auth login`. Failures here
+/// cost the user the GitHub copy of their history, not their published page.
+fn warn_about_github(ui: Ui, site_root: &Utf8Path, approval: Approval) {
+    let warn = |detail: &str| {
+        ui.status(Mark::Warn, detail, "your page will still be published");
+        ui.blank();
+        ui.say("    Only the copy of your history on GitHub is affected.");
+        ui.say("    Run this once, then publishing will send it up too:");
+        ui.say("      gh auth login");
+        ui.say("      gh auth setup-git");
+        ui.blank();
+    };
+
+    if crate::tools::locate("gh", Some(site_root)).is_none() {
+        warn("GitHub CLI is not installed");
+        return;
+    }
+
+    // A warning must not be able to fail a publish, so an error running `gh` is
+    // treated as "cannot say", the same as a non-zero exit.
+    let signed_in = perform(ui, &GitHubOperation::AuthStatus, site_root, approval)
+        .ok()
+        .flatten()
+        .is_some_and(|result| result.success());
+
+    if !signed_in {
+        warn("GitHub CLI is not signed in");
+    }
 }
 
 /// Refuses to publish when the folder holds changes kosong did not make.
