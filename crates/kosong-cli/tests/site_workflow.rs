@@ -290,9 +290,29 @@ impl Sandbox {
         sandbox
     }
 
-    /// Writes a fake tool that logs its argv and exits successfully.
+    /// Writes a fake tool on PATH that logs its argv and exits successfully.
     fn fake(&self, name: &str, extra: &str) {
-        let path = self.bin.join(name);
+        self.fake_in(&self.bin.clone(), name, extra);
+    }
+
+    /// Writes a fake into the site's own `node_modules/.bin`.
+    ///
+    /// Where Cloudflare's documented install puts wrangler, and deliberately
+    /// *not* on PATH — so a test using this proves local resolution rather than
+    /// finding the same tool twice.
+    fn local_fake(&self, name: &str, extra: &str) {
+        let bin = self.site_root().join("node_modules").join(".bin");
+        std::fs::create_dir_all(&bin).expect("create the site's local bin");
+        self.fake_in(&bin, name, extra);
+    }
+
+    /// Removes a fake from PATH, so kosong cannot find it there.
+    fn remove_fake(&self, name: &str) {
+        std::fs::remove_file(self.bin.join(name)).expect("remove the fake");
+    }
+
+    fn fake_in(&self, dir: &Path, name: &str, extra: &str) {
+        let path = dir.join(name);
         let body = format!(
             "#!/bin/sh\nprintf '{name} %s\\n' \"$*\" >> '{log}'\n{extra}\nexit 0\n",
             name = name,
@@ -1219,4 +1239,84 @@ fn the_generated_folder_is_usable_without_kosong() {
     let ignore = std::fs::read_to_string(sandbox.site_root().join(".gitignore")).unwrap();
     assert!(ignore.contains(".kosong/"));
     assert!(Path::new(&sandbox.site_root().join(".kosong/site.toml")).exists());
+}
+
+// ---------------------------------------------------------------------------
+// A wrangler installed the way Cloudflare documents it
+// ---------------------------------------------------------------------------
+
+#[test]
+fn publish_uses_a_wrangler_installed_in_the_site_folder() {
+    // Cloudflare installs wrangler as a per-project dev dependency, invoked as
+    // `npx wrangler`, so a team shares one pinned version. kosong searched PATH
+    // only, so following that advice produced "wrangler is not installed" and
+    // the hint offered the global install Cloudflare discourages.
+    let sandbox = Sandbox::new();
+    sandbox.run(&["new", "--title", "My First Site"]);
+    sandbox.run(&["site", "init", "--yes"]);
+
+    // The only wrangler anywhere is the project-local one. Removing it from PATH
+    // is what makes this a test of resolution rather than of luck.
+    sandbox.remove_fake("wrangler");
+    sandbox.local_fake("wrangler", WRANGLER_WITHOUT_THE_PROJECT);
+
+    let output = sandbox.run(&["site", "publish", "--yes"]);
+    assert_eq!(code(&output), 0, "stderr: {}", stderr(&output));
+
+    let log = sandbox.invocations();
+    assert!(
+        log.contains("wrangler pages deploy dist"),
+        "the local wrangler must be the one that deployed: {log}"
+    );
+
+    // §12.4: the disclosure has to say which binary this was, because the name
+    // alone cannot distinguish two copies on one machine.
+    let text = stdout(&output);
+    assert!(
+        text.contains("node_modules/.bin/wrangler"),
+        "the disclosure must name the binary it ran: {text}"
+    );
+}
+
+#[test]
+fn publish_stops_when_wrangler_is_installed_nowhere() {
+    // The other side of the test above: local resolution must not turn a genuine
+    // absence into some other failure.
+    let sandbox = Sandbox::new();
+    sandbox.run(&["new", "--title", "My First Site"]);
+    sandbox.run(&["site", "init", "--yes"]);
+    sandbox.remove_fake("wrangler");
+
+    let output = sandbox.run(&["site", "publish", "--yes"]);
+
+    assert_eq!(code(&output), 4, "stdout: {}", stdout(&output));
+    assert!(
+        !sandbox.invocations().contains("wrangler"),
+        "nothing may be asked of a tool that is not there"
+    );
+}
+
+#[test]
+fn doctor_finds_the_same_wrangler_publish_would() {
+    // The divergence worth preventing: doctor reporting "not installed" for a
+    // tool `site publish` happily finds. doctor holds a workspace root, and the
+    // site folder can sit one level below it, so it has to resolve the site
+    // first or it looks in the wrong directory.
+    let sandbox = Sandbox::new();
+    sandbox.run(&["new", "--title", "My First Site"]);
+    sandbox.run(&["site", "init", "--yes"]);
+    sandbox.remove_fake("wrangler");
+    sandbox.local_fake("wrangler", WRANGLER_WITHOUT_THE_PROJECT);
+
+    let output = sandbox.run(&["doctor"]);
+    let text = stdout(&output);
+
+    assert!(
+        text.contains("node_modules/.bin/wrangler"),
+        "doctor must report where it found wrangler: {text}"
+    );
+    assert!(
+        !text.contains("wrangler                  not installed"),
+        "doctor must not call a findable wrangler missing: {text}"
+    );
 }

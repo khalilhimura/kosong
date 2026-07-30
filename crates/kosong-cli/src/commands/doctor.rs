@@ -97,8 +97,9 @@ pub fn run(context: &Context, json: bool) -> CliResult<()> {
     checks.push(check_config_dir());
     checks.push(check_editor(context));
     checks.extend(check_document(context));
-    checks.extend(check_tools());
-    checks.extend(check_provider_auth(context));
+    let site_root = site_root(context);
+    checks.extend(check_tools(site_root.as_deref()));
+    checks.extend(check_provider_auth(context, site_root.as_deref()));
 
     let healthy = checks.iter().all(|c| c.status != Health::Fail);
     let report = Report {
@@ -280,10 +281,20 @@ fn check_document(context: &Context) -> Vec<Check> {
     }
 }
 
-fn check_tools() -> Vec<Check> {
+/// The site folder, when this workspace has one.
+///
+/// `doctor` runs from the workspace root, and the site folder can sit one level
+/// below it. Resolving it is what keeps `doctor` looking where `site publish`
+/// looks.
+fn site_root(context: &Context) -> Option<camino::Utf8PathBuf> {
+    let workspace = context.workspace_or_here().ok()?;
+    kosong_core::site::discover(&workspace)
+}
+
+fn check_tools(site_root: Option<&camino::Utf8Path>) -> Vec<Check> {
     TOOLS
         .iter()
-        .map(|tool| match tools::find_executable(tool.name) {
+        .map(|tool| match tools::locate(tool.name, site_root) {
             Some(path) => Check::ok(tool.name, path.as_str()),
             None => Check::warn(
                 tool.name,
@@ -303,7 +314,24 @@ fn check_tools() -> Vec<Check> {
 /// answered by reading PATH; being *signed in* can only be answered by asking
 /// the tool. Both calls are read-only allowlisted operations, and a tool that
 /// is not installed is skipped rather than run.
-fn check_provider_auth(context: &Context) -> Vec<Check> {
+/// An operation's invocation, spawning a project-local install where there is
+/// one.
+///
+/// `cwd` stays the workspace root these checks have always run in. Only which
+/// binary is spawned changes.
+fn resolved_command(
+    operation: &dyn Operation,
+    cwd: &camino::Utf8Path,
+    site_root: Option<&camino::Utf8Path>,
+) -> kosong_core::process::SafeCommand {
+    let command = operation.command(cwd);
+    match site_root.and_then(|root| tools::resolved_program(operation.program(), root)) {
+        Some(path) => command.found_at(path),
+        None => command,
+    }
+}
+
+fn check_provider_auth(context: &Context, site_root: Option<&camino::Utf8Path>) -> Vec<Check> {
     let Ok(workspace) = context.workspace_or_here() else {
         return Vec::new();
     };
@@ -316,9 +344,10 @@ fn check_provider_auth(context: &Context) -> Vec<Check> {
 
     let mut checks = Vec::new();
 
-    if tools::find_executable(github::PROGRAM).is_some() {
+    if tools::locate(github::PROGRAM, site_root).is_some() {
         let operation = GitHubOperation::AuthStatus;
-        let result = runtime.block_on(operation.command(workspace.root()).run());
+        let result =
+            runtime.block_on(resolved_command(&operation, workspace.root(), site_root).run());
         checks.push(match result {
             Ok(result) => {
                 let state =
@@ -332,9 +361,10 @@ fn check_provider_auth(context: &Context) -> Vec<Check> {
         });
     }
 
-    if tools::find_executable(cloudflare::PROGRAM).is_some() {
+    if tools::locate(cloudflare::PROGRAM, site_root).is_some() {
         let operation = CloudflareOperation::WhoAmI;
-        let result = runtime.block_on(operation.command(workspace.root()).run());
+        let result =
+            runtime.block_on(resolved_command(&operation, workspace.root(), site_root).run());
         checks.push(match result {
             Ok(result) => {
                 let state =
