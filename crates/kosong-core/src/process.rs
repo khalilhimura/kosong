@@ -130,6 +130,14 @@ impl ProcessError {
 #[derive(Debug, Clone)]
 pub struct SafeCommand {
     program: String,
+    /// Where `program` was found, when that is not left to `PATH`.
+    ///
+    /// Only [`Self::run`] reads this. Everything a person sees — [`Self::display`],
+    /// the error variants, [`ProcessResult::executable`] — keeps the allowlisted
+    /// name, because "`wrangler` failed" is what a reader can act on and an
+    /// absolute path into `node_modules` is not. §12.4's disclosure names the
+    /// path separately, which is where that detail belongs.
+    resolved: Option<Utf8PathBuf>,
     args: Vec<String>,
     cwd: Utf8PathBuf,
     timeout: Duration,
@@ -142,10 +150,35 @@ impl SafeCommand {
     pub fn new(program: impl Into<String>, cwd: impl Into<Utf8PathBuf>) -> Self {
         Self {
             program: program.into(),
+            resolved: None,
             args: Vec::new(),
             cwd: cwd.into(),
             timeout: QUERY_TIMEOUT,
         }
+    }
+
+    /// Spawns the program from `path` rather than letting `PATH` find it.
+    ///
+    /// This does **not** widen what may be run. The program is still the
+    /// allowlisted name from a provider; `path` is where that name was resolved
+    /// to, which is how a tool installed as a project dev dependency — the way
+    /// Cloudflare documents `wrangler` — becomes reachable at all. Callers pass
+    /// this only when the resolved path is not what `PATH` would have given
+    /// anyway, so a machine with no project-local install builds exactly the
+    /// invocation it built before.
+    pub fn found_at(mut self, path: impl Into<Utf8PathBuf>) -> Self {
+        self.resolved = Some(path.into());
+        self
+    }
+
+    /// What [`Self::run`] will hand to the operating system.
+    ///
+    /// The resolved path when there is one, otherwise the bare name for `PATH`
+    /// to resolve. Distinct from [`Self::program`], which is always the name.
+    pub fn executable(&self) -> &str {
+        self.resolved
+            .as_ref()
+            .map_or(self.program.as_str(), |path| path.as_str())
     }
 
     /// Adds one argument.
@@ -196,7 +229,7 @@ impl SafeCommand {
     pub async fn run(&self) -> Result<ProcessResult, ProcessError> {
         let started = Instant::now();
 
-        let mut command = tokio::process::Command::new(&self.program);
+        let mut command = tokio::process::Command::new(self.executable());
         command
             .args(&self.args)
             .current_dir(&self.cwd)

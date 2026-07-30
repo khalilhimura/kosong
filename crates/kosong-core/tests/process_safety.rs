@@ -1027,3 +1027,90 @@ fn a_real_wrangler_collision_is_read_as_a_taken_name() {
         "the message must survive redaction on its way out of the adapter"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Spawning an allowlisted program from where it was actually found
+// ---------------------------------------------------------------------------
+
+/// Cloudflare documents wrangler as a per-project dev dependency, so the binary
+/// kosong must run often sits in the site's own `node_modules/.bin` rather than
+/// on `PATH`. These pin the one mechanism that makes that possible: the program
+/// stays the allowlisted *name*, and only the path spawned changes.
+#[test]
+fn a_command_spawns_the_path_it_was_found_at() {
+    let bins = FakeBins::new();
+    let found = bins.write("kosong-local-tool", "#!/bin/sh\nprintf 'ran\\n'\n");
+
+    // The fake's directory is deliberately not on PATH, so a bare-name spawn
+    // could not reach it. Succeeding proves the resolved path was used.
+    let command = SafeCommand::new("kosong-local-tool", bins.path()).found_at(found);
+    let result = with_spawn_retry(|| block_on(command.run())).expect("the resolved path must run");
+
+    assert!(result.success());
+    assert_eq!(result.stdout.trim(), "ran");
+}
+
+#[test]
+fn a_program_not_on_path_and_not_resolved_is_still_not_found() {
+    // The other half of the test above: without `found_at`, the same name fails.
+    // Otherwise that test could pass for some unrelated reason.
+    let bins = FakeBins::new();
+    bins.write("kosong-local-tool", "#!/bin/sh\nprintf 'ran\\n'\n");
+
+    let command = SafeCommand::new("kosong-local-tool", bins.path());
+
+    assert!(matches!(
+        block_on(command.run()),
+        Err(ProcessError::NotFound { .. })
+    ));
+}
+
+#[test]
+fn a_resolved_command_reports_the_allowlisted_name_not_the_path() {
+    // What the user reads must stay `wrangler`, not an absolute path into
+    // node_modules. `perform_checked` builds "`{}` failed" from this field, and
+    // §12.4's disclosure names the path separately.
+    let bins = FakeBins::new();
+    let found = bins.write("kosong-local-tool", "#!/bin/sh\nexit 3\n");
+
+    let command = SafeCommand::new("kosong-local-tool", bins.path()).found_at(found);
+    let result = with_spawn_retry(|| block_on(command.run())).expect("spawned");
+
+    assert_eq!(result.exit_code, Some(3));
+    assert_eq!(result.executable, "kosong-local-tool");
+    assert_eq!(command.display(), "kosong-local-tool");
+}
+
+#[test]
+fn a_disclosure_says_where_a_resolved_program_was_found() {
+    // §12.4 requires the disclosure to describe what will actually run. With the
+    // name alone it would be silent about which binary that is.
+    let operation =
+        CloudflareOperation::deploy("site", Utf8Path::new("dist"), None).expect("valid");
+    let found = Utf8PathBuf::from("/tmp/site/node_modules/.bin/wrangler");
+
+    let plan = operation
+        .plan(Utf8Path::new("/tmp/site"))
+        .found_at(found.clone());
+    let disclosure = plan.disclosure().join("\n");
+
+    assert!(
+        disclosure.contains(found.as_str()),
+        "the disclosure must name the binary being run: {disclosure}"
+    );
+    // The readable command line still reads as the tool, not as a path.
+    assert!(disclosure.contains("wrangler pages deploy dist"));
+}
+
+#[test]
+fn a_plan_with_nothing_resolved_says_nothing_extra() {
+    // Every user without a project-local install must see exactly what they saw
+    // before. This is what makes the change inert for them.
+    let operation =
+        CloudflareOperation::deploy("site", Utf8Path::new("dist"), None).expect("valid");
+
+    let plan = operation.plan(Utf8Path::new("/tmp/site"));
+
+    assert_eq!(plan.resolved, None);
+    assert!(!plan.disclosure().join("\n").contains("node_modules"));
+}

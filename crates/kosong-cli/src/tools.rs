@@ -130,11 +130,6 @@ const LOCAL_RESOLUTION_SUPPORTED: bool = cfg!(unix);
 /// site root must resolve the site first — the two are not always the same
 /// directory, and searching the wrong one would report a tool missing that
 /// `site publish` finds.
-// Wired into `site`, `provider`, and `doctor` in the next phase; this attribute
-// goes away with that change. Marking the entry point rather than each helper is
-// enough — rustc treats an allowed item as a live root, so everything it calls
-// stays covered by the lint on its own merits.
-#[allow(dead_code)]
 pub fn find_tool(name: &str, project_root: &camino::Utf8Path) -> Option<Utf8PathBuf> {
     local_bin_candidate(name, project_root).or_else(|| find_executable(name))
 }
@@ -150,6 +145,34 @@ fn local_bin_candidate(name: &str, project_root: &camino::Utf8Path) -> Option<Ut
 
     let candidate = project_root.join(LOCAL_BIN).join(name);
     is_executable(&candidate).then_some(candidate)
+}
+
+/// The path a provider operation should spawn for `name`, when that is not the
+/// one `PATH` would find.
+///
+/// `None` means "spawn the allowlisted name and let `PATH` resolve it" — which
+/// is what every machine without a project-local install returns, so their
+/// invocations are byte-for-byte what they were before this existed. Only a
+/// genuine local install produces `Some`, and only for a tool whose
+/// [`Tool::prefers_local`] says so. A name absent from [`TOOLS`] is never
+/// overridden: the list is the allowlist, and a folder that dropped a `git` into
+/// `node_modules/.bin` must not be able to substitute it.
+// Wired into `site`, `provider`, and `doctor` in the next phase; this attribute
+// goes away with that change. Marking the entry point rather than each helper is
+// enough — rustc treats an allowed item as a live root, so everything it calls
+// stays covered by the lint on its own merits.
+#[allow(dead_code)]
+pub fn resolved_program(name: &str, project_root: &camino::Utf8Path) -> Option<Utf8PathBuf> {
+    let tool = TOOLS.iter().find(|tool| tool.name == name)?;
+    if !tool.prefers_local {
+        return None;
+    }
+
+    let found = find_tool(name, project_root)?;
+
+    // The `PATH` hit needs no override — spawning the bare name reaches the same
+    // binary, and disclosing a path that changes nothing would be noise.
+    (find_executable(name).as_ref() != Some(&found)).then_some(found)
 }
 
 /// Where `name` is installed, when it is installed somewhere `PATH` cannot see.
@@ -427,6 +450,47 @@ mod tests {
             unreachable_install("kosong-definitely-not-a-real-tool"),
             None
         );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_tool_that_prefers_local_is_overridden_by_a_local_install() {
+        let (_guard, root) = temp_root();
+        let local = local_shim(&root, "wrangler", 0o755);
+
+        assert_eq!(resolved_program("wrangler", &root), Some(local));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_tool_that_does_not_prefer_local_is_never_overridden() {
+        // A hostile site folder must not be able to substitute `git` by dropping
+        // a file in `node_modules/.bin`.
+        let (_guard, root) = temp_root();
+        local_shim(&root, "git", 0o755);
+
+        assert_eq!(resolved_program("git", &root), None);
+    }
+
+    #[test]
+    fn a_tool_with_no_local_install_needs_no_override() {
+        // Whether or not wrangler is on this machine's PATH, there is nothing to
+        // override: the answer is the one PATH would have given. This is what
+        // makes the change inert for everyone without a local install.
+        let (_guard, root) = temp_root();
+
+        assert_eq!(resolved_program("wrangler", &root), None);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_program_outside_the_tool_list_is_never_overridden() {
+        // The list is the allowlist. Anything absent from it keeps the plain
+        // PATH search rather than picking up whatever the folder supplies.
+        let (_guard, root) = temp_root();
+        local_shim(&root, "sh", 0o755);
+
+        assert_eq!(resolved_program("sh", &root), None);
     }
 
     #[test]
