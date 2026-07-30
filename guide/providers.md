@@ -113,7 +113,11 @@ kosong never does this for you. Each tool has its own way:
 
 ```bash
 gh auth login
-wrangler login
+```
+
+```bash
+cd my-site          # wrangler is installed per project, so sign in from there
+npx wrangler login
 ```
 
 Then confirm kosong can see it:

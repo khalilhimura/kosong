@@ -231,13 +231,57 @@ create, edit, preview, and publish need no account and no network.
 
 ### "`gh` is not installed" / "`wrangler` is not installed"
 
+`gh` is an ordinary global install:
+
 ```bash
 brew install gh                 # or see https://cli.github.com
-npm install -g wrangler
+```
+
+`wrangler` is not. Cloudflare installs it **into each project**, so that you and
+anyone you work with use the same pinned version — and kosong looks in your site
+folder before it looks at your `PATH`:
+
+```bash
+cd my-site
+npm i -D wrangler@latest
+npx wrangler login
 ```
 
 Neither is needed for local work. `kosong doctor` reports a missing one as a
-warning, never a failure.
+warning, never a failure — and when it does find one, it prints the path it
+found, so you can see which copy kosong will use.
+
+### `npm install -g` said it worked, but the command is not found
+
+```
+$ npm install -g wrangler
+changed 35 packages
+$ wrangler login
+zsh: command not found: wrangler
+```
+
+Both of those are true. npm did install it — into a folder your shell does not
+search. Ask npm where that was:
+
+```bash
+npm config get prefix
+```
+
+The binary is in `<prefix>/bin`. If that folder is not in your `PATH`, nothing
+can run it by name:
+
+```bash
+echo "$PATH"
+```
+
+`kosong site publish` diagnoses this for you rather than repeating "not
+installed": it names the exact path it found and the folder missing from your
+`PATH`.
+
+**Prefer the project install above to fixing your `PATH`.** A global npm prefix
+sometimes belongs to an application — a bundled copy of Node, say — and an
+application update can quietly remove everything installed into it. A wrangler
+in your site folder is yours, is pinned, and travels with the project.
 
 ### "GitHub CLI is installed, but it is not signed in yet"
 
