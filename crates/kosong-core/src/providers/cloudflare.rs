@@ -306,14 +306,19 @@ impl AuthState {
     pub fn repair(self) -> Option<&'static str> {
         match self {
             Self::SignedIn => None,
+            // `npx` rather than a bare `wrangler`, because Cloudflare installs
+            // wrangler per project and a project-local install is not on PATH.
+            // Telling that user to "run: wrangler login" sends them to a command
+            // their shell cannot find — the exact failure this advice exists to
+            // prevent. `npx` reaches a local install and a global one alike.
             Self::SignedOut => Some(
                 "Wrangler is installed, but it is not signed in to Cloudflare yet.\n\
-                 Run: wrangler login\n\
+                 Run this from your site folder: npx wrangler login\n\
                  Then come back and run: kosong doctor",
             ),
             Self::Unknown => Some(
                 "Wrangler could not tell kosong whether it is signed in.\n\
-                 Run: wrangler whoami",
+                 Run this from your site folder: npx wrangler whoami",
             ),
         }
     }

@@ -1559,3 +1559,33 @@ fn site_init_is_quiet_about_a_wrangler_that_is_already_there() {
         "no install advice is owed to someone who has it: {text}"
     );
 }
+
+#[test]
+fn rollback_names_the_local_install_when_wrangler_is_missing() {
+    // Rollback needs wrangler too, and used to offer the global install. It
+    // shares the publish diagnosis now, so it also explains an install that
+    // succeeded and then could not be found.
+    let sandbox = Sandbox::new();
+    sandbox.run(&["new"]);
+    sandbox.run(&["site", "init", "--yes"]);
+    sandbox.remove_fake("wrangler");
+
+    let output = sandbox.run(&["site", "rollback"]);
+    let text = format!("{}{}", stdout(&output), stderr(&output));
+
+    assert_eq!(code(&output), 4, "text: {text}");
+    assert!(
+        text.contains("npm i -D wrangler@latest"),
+        "the documented install must be offered: {text}"
+    );
+    assert!(
+        !text.contains("npm install -g wrangler"),
+        "the global install must not be suggested: {text}"
+    );
+    // Sharing the diagnosis must not cost rollback its own reason for needing
+    // the tool.
+    assert!(
+        text.contains("look up past versions"),
+        "the reason must stay specific to rollback: {text}"
+    );
+}
