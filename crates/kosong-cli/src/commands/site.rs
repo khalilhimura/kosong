@@ -40,7 +40,16 @@ fn perform(
     cwd: &Utf8Path,
     approval: Approval,
 ) -> CliResult<Option<ProcessResult>> {
-    let plan = operation.plan(cwd);
+    // `cwd` is the site folder for every caller in this file, which is where
+    // `npm install` runs and so where a project-local install lands. `None` —
+    // the usual answer — leaves the invocation exactly as it was before local
+    // resolution existed.
+    let resolved = crate::tools::resolved_program(operation.program(), cwd);
+
+    let plan = match &resolved {
+        Some(path) => operation.plan(cwd).found_at(path.clone()),
+        None => operation.plan(cwd),
+    };
 
     if plan.mutating {
         // §12.4 requires full disclosure before a mutating operation, but the
@@ -87,9 +96,12 @@ fn perform(
         .build()
         .map_err(|e| CliError::internal("RUNTIME_FAILED", e.to_string()))?;
 
-    let result = runtime
-        .block_on(operation.command(cwd).run())
-        .map_err(map_process_error)?;
+    let mut command = operation.command(cwd);
+    if let Some(path) = resolved {
+        command = command.found_at(path);
+    }
+
+    let result = runtime.block_on(command.run()).map_err(map_process_error)?;
 
     Ok(Some(result))
 }
@@ -437,7 +449,7 @@ pub fn publish(context: &Context, approval: Approval) -> CliResult<()> {
     }
 
     // 7. Deploy.
-    if crate::tools::find_executable("wrangler").is_none() {
+    if crate::tools::locate("wrangler", Some(&site_root)).is_none() {
         return Err(CliError::provider(
             "WRANGLER_MISSING",
             "wrangler is needed to publish to Cloudflare",
@@ -793,7 +805,7 @@ pub fn rollback(context: &Context, approval: Approval) -> CliResult<()> {
     ui.heading(format!("Past versions of `{}`.", state.site_name));
     ui.blank();
 
-    if crate::tools::find_executable("wrangler").is_none() {
+    if crate::tools::locate("wrangler", Some(&site_root)).is_none() {
         return Err(CliError::provider(
             "WRANGLER_MISSING",
             "wrangler is needed to look up past versions",

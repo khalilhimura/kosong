@@ -157,11 +157,6 @@ fn local_bin_candidate(name: &str, project_root: &camino::Utf8Path) -> Option<Ut
 /// [`Tool::prefers_local`] says so. A name absent from [`TOOLS`] is never
 /// overridden: the list is the allowlist, and a folder that dropped a `git` into
 /// `node_modules/.bin` must not be able to substitute it.
-// Wired into `site`, `provider`, and `doctor` in the next phase; this attribute
-// goes away with that change. Marking the entry point rather than each helper is
-// enough — rustc treats an allowed item as a live root, so everything it calls
-// stays covered by the lint on its own merits.
-#[allow(dead_code)]
 pub fn resolved_program(name: &str, project_root: &camino::Utf8Path) -> Option<Utf8PathBuf> {
     let tool = TOOLS.iter().find(|tool| tool.name == name)?;
     if !tool.prefers_local {
@@ -173,6 +168,22 @@ pub fn resolved_program(name: &str, project_root: &camino::Utf8Path) -> Option<U
     // The `PATH` hit needs no override — spawning the bare name reaches the same
     // binary, and disclosing a path that changes nothing would be noise.
     (find_executable(name).as_ref() != Some(&found)).then_some(found)
+}
+
+/// Where kosong looks for `name`, applying whatever local preference it has.
+///
+/// The one answer to "is this tool here, and which copy is it" — used by the
+/// gate that refuses a publish and by `doctor`'s report alike, because the two
+/// disagreeing is worse than the bug either would report. `doctor` calling a
+/// tool missing while `site publish` finds and runs it sends the user to fix
+/// something that is not broken.
+///
+/// `site_root` is `None` for a workspace that has not run `site init`, which
+/// simply means there is nothing local to prefer.
+pub fn locate(name: &str, site_root: Option<&camino::Utf8Path>) -> Option<Utf8PathBuf> {
+    site_root
+        .and_then(|root| resolved_program(name, root))
+        .or_else(|| find_executable(name))
 }
 
 /// Where `name` is installed, when it is installed somewhere `PATH` cannot see.
@@ -491,6 +502,19 @@ mod tests {
         local_shim(&root, "sh", 0o755);
 
         assert_eq!(resolved_program("sh", &root), None);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn locate_prefers_a_local_install_and_falls_back_to_path() {
+        let (_guard, root) = temp_root();
+        let local = local_shim(&root, "wrangler", 0o755);
+
+        assert_eq!(locate("wrangler", Some(&root)), Some(local));
+        // No site folder yet means nothing local to prefer.
+        assert_eq!(locate("wrangler", None), find_executable("wrangler"));
+        // And a tool with no local copy is still found the ordinary way.
+        assert_eq!(locate("sh", Some(&root)), find_executable("sh"));
     }
 
     #[test]

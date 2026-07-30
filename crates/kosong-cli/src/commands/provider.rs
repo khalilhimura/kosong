@@ -104,7 +104,19 @@ fn execute(
     cwd: &camino::Utf8Path,
 ) -> CliResult<kosong_core::process::ProcessResult> {
     let ui = context.ui;
-    let plan = operation.plan(cwd);
+
+    // A project-local install lives in the *site* folder, which can sit one
+    // level below the workspace root these commands run from. `cwd` is left
+    // alone: which wrangler runs and where it runs are separate decisions, and
+    // only the first one is being changed.
+    let resolved = site_root(context)
+        .as_deref()
+        .and_then(|root| crate::tools::resolved_program(operation.program(), root));
+
+    let plan = match &resolved {
+        Some(path) => operation.plan(cwd).found_at(path.clone()),
+        None => operation.plan(cwd),
+    };
 
     if plan.mutating {
         for line in plan.disclosure() {
@@ -113,13 +125,25 @@ fn execute(
         ui.blank();
     }
 
-    let command = operation.command(cwd);
+    let mut command = operation.command(cwd);
+    if let Some(path) = resolved {
+        command = command.found_at(path);
+    }
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|e| CliError::internal("RUNTIME_FAILED", e.to_string()))?;
 
     runtime.block_on(command.run()).map_err(map_process_error)
+}
+
+/// The site folder, when this workspace has one.
+///
+/// Where a project-local tool install lives. Absent for a workspace that has not
+/// run `site init`, which simply means there is nothing local to prefer.
+fn site_root(context: &Context) -> Option<camino::Utf8PathBuf> {
+    let workspace = context.workspace_or_here().ok()?;
+    kosong_core::site::discover(&workspace)
 }
 
 fn report_auth(ui: crate::ui::Ui, tool: &str, repair: Option<&'static str>) {
