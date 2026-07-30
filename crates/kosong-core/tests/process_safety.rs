@@ -1114,3 +1114,24 @@ fn a_plan_with_nothing_resolved_says_nothing_extra() {
     assert_eq!(plan.resolved, None);
     assert!(!plan.disclosure().join("\n").contains("node_modules"));
 }
+
+#[test]
+fn the_cloudflare_repairs_use_the_documented_invocation() {
+    // A project-local wrangler is not on PATH, so a repair reading "Run:
+    // wrangler login" tells that user to run a command their shell cannot find
+    // — which is the exact failure this whole change exists to remove.
+    use kosong_core::providers::cloudflare::AuthState as CloudflareAuth;
+
+    let signed_out = CloudflareAuth::SignedOut
+        .repair()
+        .expect("being signed out has a repair");
+    assert!(
+        signed_out.contains("npx wrangler login"),
+        "repair: {signed_out}"
+    );
+
+    let unknown = CloudflareAuth::Unknown
+        .repair()
+        .expect("an unknown state has a repair");
+    assert!(unknown.contains("npx wrangler whoami"), "repair: {unknown}");
+}

@@ -556,7 +556,7 @@ fn preflight(ui: Ui, state: &SiteState, site_root: &Utf8Path, approval: Approval
     }
 
     if crate::tools::locate(cloudflare::PROGRAM, Some(site_root)).is_none() {
-        blockers.push(wrangler_is_missing(site_root));
+        blockers.push(wrangler_is_missing(site_root, "publish to Cloudflare"));
     }
 
     report(ui, blockers)?;
@@ -607,7 +607,7 @@ fn report(ui: Ui, mut blockers: Vec<Blocker>) -> CliResult<()> {
 /// Two different failures wear the same "not found". Telling them apart is the
 /// difference between an actionable message and a baffling one: an install that
 /// reported success and then vanished is not the same problem as no install.
-fn wrangler_is_missing(site_root: &Utf8Path) -> Blocker {
+fn wrangler_is_missing(site_root: &Utf8Path, purpose: &str) -> Blocker {
     let install = format!(
         "Install it into your site folder, the way Cloudflare recommends:\n  \
          cd {site_root}\n  npm i -D wrangler@latest\n  npx wrangler login"
@@ -638,7 +638,7 @@ fn wrangler_is_missing(site_root: &Utf8Path) -> Blocker {
         }
         None => Blocker {
             code: "WRANGLER_MISSING",
-            problem: "wrangler is needed to publish to Cloudflare".into(),
+            problem: format!("wrangler is needed to {purpose}"),
             repair: format!(
                 "kosong looked in:\n  {local}\n  every folder in your PATH\n\n{install}",
                 local = site_root.join(crate::tools::LOCAL_BIN),
@@ -1043,12 +1043,14 @@ pub fn rollback(context: &Context, approval: Approval) -> CliResult<()> {
     ui.heading(format!("Past versions of `{}`.", state.site_name));
     ui.blank();
 
-    if crate::tools::locate("wrangler", Some(&site_root)).is_none() {
-        return Err(CliError::provider(
-            "WRANGLER_MISSING",
-            "wrangler is needed to look up past versions",
-        )
-        .with_repair("Install it with:\n  npm install -g wrangler"));
+    // The same diagnosis `publish` gives, so a rollback also explains an install
+    // that reported success and then could not be found. Only the reason for
+    // needing the tool differs.
+    if crate::tools::locate(cloudflare::PROGRAM, Some(&site_root)).is_none() {
+        report(
+            ui,
+            vec![wrangler_is_missing(&site_root, "look up past versions")],
+        )?;
     }
 
     let operation =

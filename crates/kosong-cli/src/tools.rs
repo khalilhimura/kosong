@@ -72,7 +72,13 @@ pub const TOOLS: [Tool; 4] = [
         name: "wrangler",
         purpose: "publish your site to Cloudflare",
         required_for_local: false,
-        install_hint: "npm install -g wrangler",
+        // Cloudflare's own recommendation: per project, so a team shares one
+        // pinned version. A global install drifts between projects, cannot be
+        // pinned, and on a machine whose npm prefix is not on PATH it reports
+        // success and then cannot be run.
+        install_hint: "In your site folder:\n  \
+                       npm i -D wrangler@latest\n  \
+                       npx wrangler login",
         prefers_local: true,
     },
     Tool {
@@ -512,6 +518,34 @@ mod tests {
         assert_eq!(locate("wrangler", None), find_executable("wrangler"));
         // And a tool with no local copy is still found the ordinary way.
         assert_eq!(locate("sh", Some(&root)), find_executable("sh"));
+    }
+
+    #[test]
+    fn no_install_hint_recommends_a_global_wrangler() {
+        // Cloudflare installs wrangler per project so a team shares one pinned
+        // version. The global hint was a workaround for kosong's own resolver,
+        // dressed up as advice — and on a machine whose npm prefix is not on
+        // PATH it produced an install that reported success and then could not
+        // be run.
+        for tool in TOOLS {
+            assert!(
+                !tool.install_hint.contains("install -g wrangler"),
+                "`{}` still recommends the global install",
+                tool.name
+            );
+        }
+    }
+
+    #[test]
+    fn the_wrangler_hint_is_the_one_cloudflare_documents() {
+        let hint = TOOLS
+            .iter()
+            .find(|tool| tool.name == "wrangler")
+            .expect("wrangler is a tool")
+            .install_hint;
+
+        assert!(hint.contains("npm i -D wrangler@latest"), "hint: {hint}");
+        assert!(hint.contains("npx wrangler login"), "hint: {hint}");
     }
 
     #[test]
