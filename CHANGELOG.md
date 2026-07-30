@@ -10,6 +10,103 @@ and environment variables — will not change without being named here.
 
 ## Unreleased
 
+## [0.4.0] — 2026-07-30
+
+kosong now finds the wrangler that Cloudflare tells you to install, and says
+what publishing needs before it does any of the work.
+
+### Added
+
+- `kosong site publish` checks what it needs before doing anything, and reports
+  every problem in one pass.
+
+  wrangler was checked at step 8, after `npm install`, after the build, and
+  after the push to GitHub. A first-time user paid for a full build before being
+  told the one tool they were missing, fixed it, and paid again — and the second
+  attempt then failed at the Cloudflare project lookup with wrangler's raw "not
+  authenticated" text, because nothing had asked about sign-in. Three round
+  trips and two wasted builds to publish one page.
+
+  The checks now run first, before anything is rendered, fetched, built, or
+  sent. A publish stopped this way leaves your site folder holding nothing but
+  the template: no `node_modules`, no `dist`, no lockfile. Being told about
+  wrangler, fixing it, and then being told about npm is being failed twice for
+  one setup, so everything found is reported together.
+
+  A missing wrangler or npm stops the publish. A GitHub problem only warns — a
+  failed push has never stopped a publish and your page still goes live, so
+  blocking here would be stricter than the step it protects — and it is
+  mentioned only if you set up a repository in the first place.
+
+  Being signed out of Cloudflare stops the publish. Output that cannot be read
+  either way warns and carries on, because `wrangler whoami` checks its token
+  over the network: offline, rate-limited, and a future wrangler that rewords
+  itself all look alike from here, and refusing to publish on the strength of a
+  string match would stop everyone at once. The sign-in check is skipped
+  entirely for a site that has published before, since a successful deployment
+  is proof it worked.
+
+  This runs under `--dry-run` too, where on a site that has never published it
+  makes one read-only `wrangler whoami` call. A dry run that reports what it
+  "would" deploy while you are signed out is not a plan.
+
+- `kosong site init` now tells you what publishing will need — but only when
+  wrangler is not already there. Telling someone to install what they have
+  trains them to stop reading.
+
+- Where two copies of a tool could be on your machine, the plan kosong shows you
+  before running anything now names the one it will use, on a `using` line. The
+  command itself still reads as `wrangler pages deploy dist` rather than as a
+  path.
+
+### Changed
+
+- kosong looks for wrangler in your site folder before looking on your PATH.
+
+  Cloudflare documents wrangler as a per-project dev dependency, run as `npx
+  wrangler`, so that a team shares one pinned version. kosong could not use one:
+  it searched PATH alone, so a user who followed Cloudflare's own advice was
+  told "wrangler is not installed", and the only fix kosong offered was the
+  global install Cloudflare discourages.
+
+  `site publish`, `site rollback`, `provider`, and `doctor` now answer "is
+  wrangler here, and which copy" the same way, so `doctor` can no longer call a
+  tool missing while `publish` finds it and runs it. Only wrangler is looked for
+  this way; git, `gh`, and npm still come from PATH alone. With no project-local
+  install, kosong builds exactly the command it built before.
+
+  Windows is unchanged, and still finds wrangler on PATH only.
+
+- Every place kosong recommended installing wrangler now recommends the project
+  install: `doctor`'s hint, the sign-in repair, and `site rollback`'s message,
+  which had its own worse copy of the missing-wrangler text and now shares the
+  publish diagnosis. `wrangler login` has become `npx wrangler login`, because a
+  project-local wrangler is not on your PATH and the bare command is one your
+  shell cannot find. `npx` reaches a global install just as well.
+
+- The musl builds are now tested on a musl system. 0.3.0 shipped them built,
+  shown to be statically linked, and smoke-tested on glibc — none of which is an
+  Alpine machine being happy with them. They now go through the same five checks
+  on Alpine that every other platform gets.
+
+### Fixed
+
+- An install that reported success and then could not be found is now told apart
+  from no install at all.
+
+  `npm install -g wrangler` reports success, and `wrangler` is then "command not
+  found", because npm's prefix bin folder is not on your PATH. Both failures
+  used to arrive as the same "wrangler is not installed". kosong now names the
+  file it found, names the folder your shell is not searching, and says why the
+  install looked like it worked. The repair offered is the project-local install
+  rather than a repeat of the global one that caused it — a global prefix
+  sometimes belongs to an application, and an application update can quietly
+  remove everything installed into it.
+
+  This is a diagnosis, not a search path. It is accurate for npm's own default
+  prefix, and says nothing rather than guessing for Homebrew and shim-based
+  version managers, which keep their bin folder on PATH anyway.
+
 ## [0.3.0] — 2026-07-29
 
 Two more ways to install kosong, and one more kind of computer it runs on.
@@ -255,6 +352,7 @@ archive until it does.
 - [`guide/course-outline.md`](guide/course-outline.md) — the five course
   modules mapped to real commands and the artefacts they produce.
 
+[0.4.0]: https://github.com/khalilhimura/kosong/releases/tag/v0.4.0
 [0.3.0]: https://github.com/khalilhimura/kosong/releases/tag/v0.3.0
 [0.2.1]: https://github.com/khalilhimura/kosong/releases/tag/v0.2.1
 [0.2.0]: https://github.com/khalilhimura/kosong/releases/tag/v0.2.0
