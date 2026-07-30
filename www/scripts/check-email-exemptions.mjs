@@ -1,22 +1,23 @@
-// Every email-shaped string in a code block must be exempt from Cloudflare's
-// Email Address Obfuscation.
+// Every email address in a code block must be exempt from Cloudflare's Email
+// Address Obfuscation, with the markers *inside* the block.
 //
-// Scrape Shield rewrites anything email-shaped in the response body into a
-// `[email protected]` link plus a decode script. In prose that is the whole
-// point of the feature. In a code block it silently corrupts a command the
-// reader is meant to copy: `kosong login --email you@example.com` reaches
-// anyone without JavaScript as `kosong login --email [email protected]`, on the
-// troubleshooting page, which is where people land when something is already
-// going wrong.
+// `exempt-emails.mjs` explains what the obfuscation does and why the placement
+// is the whole problem. This proves the placement is still right, on the built
+// HTML, on every build.
 //
-// `collect.mjs` wraps those fences in `<!--email_off-->`. This checks the
-// wrapping survived all the way to the HTML, because that is the part that can
-// break without anyone touching it — a remark or Astro upgrade that starts
-// stripping comments would leave the site serving a broken command with every
-// other check still green. It was found by comparing served bytes against the
-// local build, which is not something anyone does twice.
+// # Why it insists the markers are inside the `<pre>`
 //
-// Run against `dist/` after `astro build`; `npm run build` does it.
+// The first attempt at this wrapped the fence in Markdown, which puts the
+// comments outside `<pre>`. Cloudflare ignores that and obfuscates anyway. A
+// check that only asked "is this email inside some exempt region" passed that
+// broken build happily, and the page went to production still serving a command
+// nobody could copy. So the region has to be found *within* the block, which is
+// the arrangement that was actually observed working against the live zone.
+//
+// What this still cannot prove is that Cloudflare honours it — that is a fact
+// about someone else's edge, confirmed by fetching the deployed page and
+// finding no `__cf_email__`. This checks the input to that, which is the half
+// that can regress here.
 
 import { readdir, readFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
@@ -25,7 +26,7 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const dist = resolve(here, "../dist");
 
-/** Deliberately loose: this is a "would Cloudflare rewrite it" test, not validation. */
+/** Deliberately loose: this asks "would Cloudflare rewrite it", not "is it valid". */
 const EMAIL = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
 
 const EXEMPT_REGION = /<!--email_off-->[\s\S]*?<!--\/email_off-->/g;
@@ -40,20 +41,18 @@ async function* htmlFiles(dir) {
 }
 
 const failures = [];
-let exempted = 0;
+let protectedCount = 0;
 
 for await (const file of htmlFiles(dist)) {
   const html = await readFile(file, "utf8");
 
-  exempted += (html.match(EXEMPT_REGION) ?? []).length;
-
-  // Whatever is already inside an exempt region is, by definition, fine. What
-  // is left is what Cloudflare will rewrite.
-  const unprotected = html.replace(EXEMPT_REGION, "");
-
-  for (const [block] of unprotected.matchAll(PRE_BLOCK)) {
-    const found = block.match(EMAIL);
+  for (const [block] of html.matchAll(PRE_BLOCK)) {
+    // Only regions inside this block count. Markers outside it are the
+    // arrangement Cloudflare discards, so they must not satisfy this.
+    const exposed = block.replace(EXEMPT_REGION, "");
+    const found = exposed.match(EMAIL);
     if (found) failures.push(`${relative(dist, file)}: ${found[0]}`);
+    else protectedCount += (block.match(EXEMPT_REGION) ?? []).length;
   }
 }
 
@@ -64,8 +63,11 @@ if (failures.length) {
       "cannot be copied:\n",
   );
   for (const failure of failures) console.error(`  ${failure}`);
-  console.error("\nWrap the fence in collect.mjs, or check the comment survived the build.");
+  console.error(
+    "\nThe markers must sit inside the <pre>, around the address itself.\n" +
+      "Outside it, Cloudflare strips them and obfuscates anyway.",
+  );
   process.exit(1);
 }
 
-console.log(`email exemptions: ${exempted} code block(s) protected, none exposed`);
+console.log(`email exemptions verified: ${protectedCount} address(es) protected in code blocks`);

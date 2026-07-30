@@ -7,7 +7,7 @@
   "scripts": {
     "collect": "node scripts/collect.mjs",
     "dev": "npm run collect && astro dev",
-    "build": "npm run collect && astro build && node scripts/check-email-exemptions.mjs",
+    "build": "npm run collect && astro build && node scripts/exempt-emails.mjs && node scripts/check-email-exemptions.mjs",
     "preview": "astro preview"
   },
   "dependencies": {
