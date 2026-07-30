@@ -11,6 +11,12 @@ name: Live smoke
 # it already has: Wrangler has no Pages rollback command, contrary to what the
 # specification assumed. Only a live run catches the next one.
 #
+# Wrangler is installed per project here, never globally. A global install would
+# put it on `PATH`, and kosong would then find it the old way — so this run would
+# go green while never touching the project-local resolution that every user
+# following Cloudflare's documentation gets. The publish step asserts which
+# binary actually ran rather than trusting that arrangement.
+#
 # This never runs on a push. It costs real resources and touches real accounts.
 on:
   workflow_dispatch:
@@ -44,6 +50,26 @@ jobs:
       - name: Build
         run: cargo build --release
 
+      - name: Install wrangler the way Cloudflare documents it
+        # Deliberately not `npm install -g`. A global install is the one this
+        # project stopped recommending, and a runner that used it would exercise
+        # the `PATH` lookup rather than the project-local resolution every user
+        # now gets — so the code path that actually ships would go untested here.
+        #
+        # This copy is the *workflow's* own, for the language check and the
+        # cleanup below. Both are this file's business rather than kosong's, and
+        # neither should depend on a site folder existing. kosong gets its own
+        # copy, installed into the site folder further down, which is the one it
+        # must resolve and run.
+        #
+        # Referenced by absolute path throughout, because a project-local install
+        # is not on `PATH` — which is the entire point.
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/tools"
+          npm i --prefix "$RUNNER_TEMP/tools" --no-fund --no-audit wrangler@latest
+          echo "WRANGLER=$RUNNER_TEMP/tools/node_modules/.bin/wrangler" >> "$GITHUB_ENV"
+
       - name: Confirm the providers still speak the expected language
         # Checked before anything is created, so a syntax drift is reported
         # rather than discovered halfway through a deployment.
@@ -52,15 +78,14 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           set -euo pipefail
-          npm install -g wrangler
 
           gh auth status
-          wrangler whoami
+          "$WRANGLER" whoami
 
           # §13.4: the rollback situation is re-verified every run, because the
           # day this assertion fails is the day kosong could offer a real
           # `site rollback`.
-          if wrangler pages deployment --help 2>&1 | grep -qi 'rollback'; then
+          if "$WRANGLER" pages deployment --help 2>&1 | grep -qi 'rollback'; then
             echo "::warning::Wrangler now has a Pages rollback command."
             echo "::warning::Revisit spec/extension-boundaries.md and site rollback."
           else
@@ -96,7 +121,31 @@ jobs:
 
           "$BIN" --workspace "$WORK" new --title "Live Smoke ${GITHUB_RUN_ID}"
           "$BIN" --workspace "$WORK" site init "$NAME" --yes
+
+          # Cloudflare installs wrangler into each project, and kosong looks in
+          # the site folder before it looks at `PATH`. Installing it here — after
+          # `site init` has made the folder, before the publish needs it — is what
+          # makes this run exercise the resolution a real user gets.
+          #
+          # `-D`, matching the form the guide and every hint now give. Not run
+          # with `--ignore-scripts`: that flag belongs to the install kosong makes
+          # on the user's behalf, and applying it to the user's own deliberate
+          # install could leave a half-built binary.
+          npm i --prefix "$WORK/$NAME" -D --no-fund --no-audit wrangler@latest
+
           "$BIN" --workspace "$WORK" site publish --yes | tee "$WORK/publish.log"
+
+          # The publish must have run the site's own wrangler, not one from PATH.
+          # kosong discloses which binary it ran, so this is an observation rather
+          # than an assumption — and without it this run would pass just as
+          # happily against a global install, which is the arrangement that broke
+          # the user who reported this.
+          if ! grep -q "${NAME}/node_modules/.bin/wrangler" "$WORK/publish.log"; then
+            echo "::error::the publish did not use the project-local wrangler."
+            echo "::error::Expected a 'using' line naming <site>/node_modules/.bin/wrangler."
+            exit 1
+          fi
+          echo "Confirmed: the publish ran the wrangler installed in the site folder."
 
           # The README promises the user ends up owning four things, and one of
           # them is their history on GitHub. Every run so far failed to deliver
@@ -219,5 +268,15 @@ jobs:
         run: |
           set +e
           gh repo delete "$SMOKE_NAME" --yes
-          wrangler pages project delete "$SMOKE_NAME" --yes
+
+          # This step runs after a failure too, which can be a failure that
+          # happened before wrangler was installed. Naming the guard rather than
+          # letting an empty `$WRANGLER` expand to a "command not found" keeps a
+          # real cleanup failure legible.
+          if [ -x "${WRANGLER:-}" ]; then
+            "$WRANGLER" pages project delete "$SMOKE_NAME" --yes
+          else
+            echo "::warning::wrangler was never installed, so no Pages project"
+            echo "::warning::could have been created — nothing to delete."
+          fi
           echo "cleanup attempted for $SMOKE_NAME"
