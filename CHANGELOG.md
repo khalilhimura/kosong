@@ -10,6 +10,29 @@ and environment variables — will not change without being named here.
 
 ## Unreleased
 
+### Fixed
+
+- The sign-in command in the troubleshooting guide can be copied again. Read
+  without JavaScript, the website served
+
+  ```bash
+  kosong login --email [email protected]
+  ```
+
+  in place of the example address the guide is written with. Anyone who copied
+  it got a command that could not work, on the page people are sent to when
+  something has already gone wrong.
+
+  Cloudflare's Email Address Obfuscation rewrites anything email-shaped in a
+  page to keep addresses from scrapers. That is the right thing to do to an
+  address in prose and the wrong thing to do to one inside a code block.
+  Addresses in code blocks are now exempt, and the command reads as written;
+  addresses in prose keep their protection.
+
+  Nothing about `kosong` itself changes. The guide's own text was always
+  correct — only the copy served by the website was affected, and only for
+  readers without JavaScript, which is why it went unnoticed.
+
 ## [0.4.0] — 2026-07-30
 
 kosong now finds the wrangler that Cloudflare tells you to install, and says
