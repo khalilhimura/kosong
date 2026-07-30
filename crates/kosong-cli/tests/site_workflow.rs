@@ -1320,3 +1320,242 @@ fn doctor_finds_the_same_wrangler_publish_would() {
         "doctor must not call a findable wrangler missing: {text}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// The publish preflight
+// ---------------------------------------------------------------------------
+
+/// A wrangler that reports nobody is signed in — and exits 0 while doing it,
+/// which is what the real one does.
+///
+/// No backticks: this is embedded in a `/bin/sh` script, where they would be
+/// command substitution rather than punctuation.
+const WRANGLER_SIGNED_OUT: &str = r#"if [ "$1" = "whoami" ]; then
+  echo "You are not logged in. Please run wrangler login."
+  exit 0
+fi"#;
+
+/// A wrangler whose sign-in state cannot be read at all — offline, rate
+/// limited, or a version that reworded its output.
+const WRANGLER_WHOSE_WHOAMI_IS_UNREADABLE: &str = r#"if [ "$1" = "whoami" ]; then
+  echo "connect ETIMEDOUT" >&2
+  exit 1
+elif [ "$2" = "project" ] && [ "$3" = "list" ]; then
+  printf '\342\224\202 Project Name \342\224\202 Project Domains \342\224\202\n'
+elif [ "$2" = "deploy" ]; then
+  echo "Deployment complete! Take a peek over at https://abc123.my-first-site.pages.dev"
+fi"#;
+
+#[test]
+fn publish_checks_its_tools_before_doing_any_work() {
+    // The ordering this fixes: wrangler was checked at step 7, after npm
+    // install, the build, and the push. A first-time user paid for a full build
+    // before being told the one tool they were missing — then paid again.
+    let sandbox = Sandbox::new();
+    sandbox.run(&["new", "--title", "My First Site"]);
+    sandbox.run(&["site", "init", "--yes"]);
+    sandbox.remove_fake("wrangler");
+
+    let output = sandbox.run(&["site", "publish", "--yes"]);
+    assert_eq!(code(&output), 4, "stdout: {}", stdout(&output));
+
+    let log = sandbox.invocations();
+    assert!(
+        !log.contains("npm install"),
+        "nothing may be fetched before the tools are checked: {log}"
+    );
+    assert!(
+        !log.contains("npm run build"),
+        "nothing may be built before the tools are checked: {log}"
+    );
+    assert!(
+        !sandbox.site_root().join("dist").exists(),
+        "no build output may exist after a preflight failure"
+    );
+}
+
+#[test]
+fn publish_reports_every_missing_tool_at_once() {
+    // Fixing wrangler only to be told about npm is being failed twice for one
+    // setup. Both must be named in the same run.
+    let sandbox = Sandbox::new();
+    sandbox.run(&["new", "--title", "My First Site"]);
+    sandbox.run(&["site", "init", "--yes"]);
+    sandbox.remove_fake("wrangler");
+    sandbox.remove_fake("npm");
+
+    let output = sandbox.run(&["site", "publish", "--yes"]);
+    let text = format!("{}{}", stdout(&output), stderr(&output));
+
+    assert_eq!(code(&output), 4, "text: {text}");
+    assert!(text.contains("wrangler"), "wrangler must be named: {text}");
+    assert!(text.contains("npm"), "npm must be named: {text}");
+}
+
+#[test]
+fn publish_names_the_local_install_when_wrangler_is_missing() {
+    // The hint has to be the one Cloudflare documents, and it has to say where
+    // kosong looked — otherwise "not installed" is unarguable and unhelpful.
+    let sandbox = Sandbox::new();
+    sandbox.run(&["new", "--title", "My First Site"]);
+    sandbox.run(&["site", "init", "--yes"]);
+    sandbox.remove_fake("wrangler");
+
+    let output = sandbox.run(&["site", "publish", "--yes"]);
+    let text = format!("{}{}", stdout(&output), stderr(&output));
+
+    assert!(
+        text.contains("npm i -D wrangler@latest"),
+        "the documented install must be offered: {text}"
+    );
+    assert!(
+        text.contains("npx wrangler login"),
+        "and how to sign in: {text}"
+    );
+    assert!(
+        text.contains("node_modules/.bin"),
+        "and where kosong looked: {text}"
+    );
+    assert!(
+        !text.contains("npm install -g wrangler"),
+        "the global install Cloudflare discourages must not be suggested: {text}"
+    );
+}
+
+#[test]
+fn publish_stops_when_wrangler_is_not_signed_in() {
+    // `interpret_whoami` and `AuthState::repair` already said the right thing.
+    // Only `doctor` ever called them, so publish deployed blind and handed the
+    // user wrangler's raw output instead.
+    let sandbox = Sandbox::new();
+    sandbox.run(&["new", "--title", "My First Site"]);
+    sandbox.run(&["site", "init", "--yes"]);
+    sandbox.fake("wrangler", WRANGLER_SIGNED_OUT);
+
+    let output = sandbox.run(&["site", "publish", "--yes"]);
+    let text = format!("{}{}", stdout(&output), stderr(&output));
+
+    assert_eq!(code(&output), 4, "text: {text}");
+    assert!(
+        text.contains("wrangler login"),
+        "the repair must name how to sign in: {text}"
+    );
+    assert!(
+        !sandbox.invocations().contains("pages deploy"),
+        "nothing may be deployed on behalf of someone who is not signed in"
+    );
+    assert!(
+        !sandbox.invocations().contains("npm install"),
+        "and nothing may be built first"
+    );
+}
+
+#[test]
+fn publish_continues_when_wrangler_sign_in_cannot_be_read() {
+    // A preflight must never fail closed on output it does not recognise.
+    // Offline, rate limited, or a reworded wrangler would otherwise block every
+    // user at once, from a string match.
+    let sandbox = Sandbox::new();
+    sandbox.run(&["new", "--title", "My First Site"]);
+    sandbox.run(&["site", "init", "--yes"]);
+    sandbox.fake("wrangler", WRANGLER_WHOSE_WHOAMI_IS_UNREADABLE);
+
+    let output = sandbox.run(&["site", "publish", "--yes"]);
+
+    assert_eq!(code(&output), 0, "stderr: {}", stderr(&output));
+    assert!(
+        sandbox.invocations().contains("wrangler pages deploy"),
+        "an unreadable sign-in state must not stop the publish"
+    );
+}
+
+#[test]
+fn a_second_publish_does_not_ask_wrangler_who_it_is() {
+    // A successful past deployment proves wrangler was signed in. Paying a
+    // network round trip on every publish to re-establish that taxes the people
+    // who least need it; if the sign-in has lapsed, the deploy says so.
+    let sandbox = Sandbox::new();
+    sandbox.run(&["new", "--title", "My First Site"]);
+    sandbox.run(&["site", "init", "--yes"]);
+
+    let first = sandbox.run(&["site", "publish", "--yes"]);
+    assert_eq!(code(&first), 0, "stderr: {}", stderr(&first));
+    let after_first = sandbox.invocations();
+    assert!(
+        after_first.contains("wrangler whoami"),
+        "the first publish must check: {after_first}"
+    );
+
+    let second = sandbox.run(&["site", "publish", "--yes"]);
+    assert_eq!(code(&second), 0, "stderr: {}", stderr(&second));
+
+    let only_second = sandbox.invocations()[after_first.len()..].to_owned();
+    assert!(
+        !only_second.contains("whoami"),
+        "a proven publisher must not be asked again: {only_second}"
+    );
+    assert!(
+        only_second.contains("pages deploy"),
+        "and the publish must still happen: {only_second}"
+    );
+}
+
+#[test]
+fn publish_warns_but_continues_when_github_is_not_signed_in() {
+    // A failed push deliberately does not sink a publish: the built files are
+    // fine and the deployment is what the user asked for. So the preflight must
+    // not be stricter than the step it protects.
+    let sandbox = Sandbox::new();
+    sandbox.run(&["new", "--title", "My First Site"]);
+    sandbox.run(&["site", "init", "--yes"]);
+
+    // Signed in for `site init`, so a repository was recorded; signed out by the
+    // time the publish runs.
+    sandbox.fake("gh", "exit 1");
+
+    let output = sandbox.run(&["site", "publish", "--yes"]);
+    let text = stdout(&output);
+
+    assert_eq!(code(&output), 0, "stderr: {}", stderr(&output));
+    assert!(
+        text.contains("gh auth setup-git"),
+        "the fix that actually lets git push must be named: {text}"
+    );
+    assert!(
+        sandbox.invocations().contains("wrangler pages deploy"),
+        "GitHub must never block the deployment"
+    );
+}
+
+#[test]
+fn site_init_says_what_publishing_will_need() {
+    // The wrangler requirement used to be discoverable only by failing a
+    // publish, after a build had already been paid for.
+    let sandbox = Sandbox::new();
+    sandbox.run(&["new", "--title", "My First Site"]);
+    sandbox.remove_fake("wrangler");
+
+    let output = sandbox.run(&["site", "init", "--yes"]);
+    let text = stdout(&output);
+
+    assert!(
+        text.contains("npm i -D wrangler@latest"),
+        "init must say what publish will need: {text}"
+    );
+}
+
+#[test]
+fn site_init_is_quiet_about_a_wrangler_that_is_already_there() {
+    // Telling someone to install what they already have trains them to stop
+    // reading, which is the failure mode every hint here is trying to avoid.
+    let sandbox = Sandbox::new();
+    sandbox.run(&["new", "--title", "My First Site"]);
+
+    let output = sandbox.run(&["site", "init", "--yes"]);
+    let text = stdout(&output);
+
+    assert!(
+        !text.contains("npm i -D wrangler@latest"),
+        "no install advice is owed to someone who has it: {text}"
+    );
+}

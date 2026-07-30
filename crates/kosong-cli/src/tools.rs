@@ -105,7 +105,7 @@ pub fn find_executable(name: &str) -> Option<Utf8PathBuf> {
 ///
 /// npm, pnpm, yarn, and bun all use this path, so a local install made with any
 /// of them is found.
-const LOCAL_BIN: &str = "node_modules/.bin";
+pub const LOCAL_BIN: &str = "node_modules/.bin";
 
 /// Whether a project-local `node_modules/.bin` may be searched on this platform.
 ///
@@ -216,9 +216,6 @@ pub fn locate(name: &str, site_root: Option<&camino::Utf8Path>) -> Option<Utf8Pa
 /// npm — and §12.2 permits npm for template install and build only. That
 /// widening was considered and declined; a heuristic that is never wrong and
 /// sometimes silent is the better trade for a message.
-// Called from the publish preflight two phases from now, which is where this
-// attribute goes away.
-#[allow(dead_code)]
 pub fn unreachable_install(name: &str) -> Option<Utf8PathBuf> {
     // Reachable means there is nothing to explain.
     if find_executable(name).is_some() {
