@@ -99,7 +99,7 @@ unscoped name has gone, the launcher, the docs and this file all change.
 
    ```bash
    cargo build --release
-   node npm/verify.mjs          # 15 checks, and it builds npm/dist as a side effect
+   node npm/verify.mjs          # 14 checks, and it builds npm/dist as a side effect
    ```
 
    For a real release use the four published binaries rather than one local
