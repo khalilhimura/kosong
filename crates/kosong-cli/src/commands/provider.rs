@@ -129,12 +129,8 @@ fn execute(
     if let Some(path) = resolved {
         command = command.found_at(path);
     }
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|e| CliError::internal("RUNTIME_FAILED", e.to_string()))?;
 
-    runtime.block_on(command.run()).map_err(map_process_error)
+    context.block_on(command.run()).map_err(map_process_error)
 }
 
 /// The site folder, when this workspace has one.

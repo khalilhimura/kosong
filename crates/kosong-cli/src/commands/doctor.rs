@@ -357,19 +357,13 @@ fn check_provider_auth(context: &Context, site_root: Option<&camino::Utf8Path>) 
     let Ok(workspace) = context.workspace_or_here() else {
         return Vec::new();
     };
-    let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    else {
-        return Vec::new();
-    };
 
     let mut checks = Vec::new();
 
     if tools::locate(github::PROGRAM, site_root).is_some() {
         let operation = GitHubOperation::AuthStatus;
         let result =
-            runtime.block_on(resolved_command(&operation, workspace.root(), site_root).run());
+            context.block_on(resolved_command(&operation, workspace.root(), site_root).run());
         checks.push(match result {
             Ok(result) => {
                 let state =
@@ -386,7 +380,7 @@ fn check_provider_auth(context: &Context, site_root: Option<&camino::Utf8Path>) 
     if tools::locate(cloudflare::PROGRAM, site_root).is_some() {
         let operation = CloudflareOperation::WhoAmI;
         let result =
-            runtime.block_on(resolved_command(&operation, workspace.root(), site_root).run());
+            context.block_on(resolved_command(&operation, workspace.root(), site_root).run());
         checks.push(match result {
             Ok(result) => {
                 let state =

@@ -186,40 +186,29 @@ pub fn validate_repo_reference(reference: &str) -> Result<String, ProviderError>
 ///
 /// `gh` reports this through its exit code; the text is only used to give a
 /// clearer message.
-pub fn interpret_auth_status(exit_code: Option<i32>, output: &str) -> AuthState {
+pub fn interpret_auth_status(exit_code: Option<i32>, output: &str) -> super::AuthState {
     if exit_code == Some(0) {
-        return AuthState::SignedIn;
+        return super::AuthState::SignedIn;
     }
     if output.contains("not logged") || output.contains("not logged in") {
-        AuthState::SignedOut
+        super::AuthState::SignedOut
     } else {
-        AuthState::Unknown
+        super::AuthState::Unknown
     }
 }
 
-/// Whether `gh` is usable.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AuthState {
-    SignedIn,
-    SignedOut,
-    /// `gh` failed for a reason that is not obviously a sign-in problem.
-    Unknown,
-}
-
-impl AuthState {
-    /// A plain-language next action, in the CLI's voice.
-    pub fn repair(self) -> Option<&'static str> {
-        match self {
-            Self::SignedIn => None,
-            Self::SignedOut => Some(
-                "GitHub CLI is installed, but it is not signed in yet.\n\
-                 Run: gh auth login\n\
-                 Then come back and run: kosong doctor",
-            ),
-            Self::Unknown => Some(
-                "GitHub CLI could not tell kosong whether it is signed in.\n\
-                 Run: gh auth status",
-            ),
-        }
+/// A plain-language next action, in the CLI's voice, for GitHub's gh CLI.
+pub fn gh_repair(state: super::AuthState) -> Option<&'static str> {
+    match state {
+        super::AuthState::SignedIn => None,
+        super::AuthState::SignedOut => Some(
+            "GitHub CLI is installed, but it is not signed in yet.\n\
+             Run: gh auth login\n\
+             Then come back and run: kosong doctor",
+        ),
+        super::AuthState::Unknown => Some(
+            "GitHub CLI could not tell kosong whether it is signed in.\n\
+             Run: gh auth status",
+        ),
     }
 }

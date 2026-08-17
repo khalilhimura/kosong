@@ -7,7 +7,7 @@
 //!
 //! Lesson: software can describe its own capabilities to other software.
 
-use super::super::exit::{CliError, CliResult};
+use crate::exit::{CliError, CliResult};
 use super::show;
 use super::status::status_json;
 use super::doctor::doctor_json;
@@ -53,8 +53,8 @@ impl KosongMcp {
         }
     }
 
-    /// Print the document content.
-    #[tool(description = "Print the document content.")]
+    /// Return the document content.
+    #[tool(description = "Return the document content.")]
     async fn kosong_show(&self) -> String {
         match show::show_raw(&self.context) {
             Ok(text) => text,

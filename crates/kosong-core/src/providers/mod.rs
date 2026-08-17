@@ -217,3 +217,21 @@ pub trait Operation {
             .timeout(self.timeout())
     }
 }
+
+// ---------------------------------------------------------------------------
+// AuthState (shared by cloudflare and github providers)
+// ---------------------------------------------------------------------------
+
+/// Whether a provider's CLI is signed in and usable.
+///
+/// Both [`cloudflare`] and [`github`] need to answer this same question about
+/// their respective tools, and both interpret it from process output. The enum
+/// is shared so that callers in the CLI layer can handle one type rather than
+/// two.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthState {
+    SignedIn,
+    SignedOut,
+    /// The tool failed for a reason that is not obviously a sign-in problem.
+    Unknown,
+}

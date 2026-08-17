@@ -12,11 +12,12 @@
 
 use camino::{Utf8Path, Utf8PathBuf};
 use kosong_core::process::{
-    LONG_TIMEOUT, ProcessError, REDACTED, SafeCommand, format_command, redact,
+    LONG_TIMEOUT, ProcessError, SafeCommand, format_command,
 };
+use kosong_core::redact::{REDACTED, redact};
 use kosong_core::providers::cloudflare::CloudflareOperation;
-use kosong_core::providers::github::{AuthState, GitHubOperation, interpret_auth_status};
-use kosong_core::providers::{Operation, ProviderError, validate_name};
+use kosong_core::providers::github::{GitHubOperation, gh_repair, interpret_auth_status};
+use kosong_core::providers::{AuthState, Operation, ProviderError, validate_name};
 use std::time::Duration;
 use tempfile::TempDir;
 
@@ -825,8 +826,7 @@ fn gh_reporting_logged_out_is_recognised() {
         AuthState::SignedOut
     );
     assert!(
-        AuthState::SignedOut
-            .repair()
+        gh_repair(AuthState::SignedOut)
             .unwrap()
             .contains("gh auth login")
     );
@@ -838,12 +838,12 @@ fn an_unexplained_gh_failure_is_not_guessed_at() {
         interpret_auth_status(Some(1), "network unreachable"),
         AuthState::Unknown
     );
-    assert!(AuthState::Unknown.repair().is_some());
+    assert!(gh_repair(AuthState::Unknown).is_some());
 }
 
 #[test]
 fn wrangler_reporting_logged_out_despite_exit_zero_is_recognised() {
-    use kosong_core::providers::cloudflare::{AuthState as CfAuth, interpret_whoami};
+    use kosong_core::providers::{AuthState as CfAuth, cloudflare::interpret_whoami};
 
     // wrangler exits 0 while saying nobody is signed in, so the exit code
     // alone is not enough.
@@ -984,7 +984,7 @@ fn a_create_result_is_read_for_which_kind_of_failure_it_was() {
 /// them.
 #[test]
 fn a_real_wrangler_collision_is_read_as_a_taken_name() {
-    use kosong_core::process::redact;
+    use kosong_core::redact::redact;
     use kosong_core::providers::cloudflare::{ProjectCreateOutcome, interpret_project_create};
 
     let stderr = "\u{1b}[31m✘ \u{1b}[41;31m[\u{1b}[41;97mERROR\u{1b}[41;31m]\u{1b}[0m \u{1b}[1mA request to the Cloudflare API (/accounts/0123456789abcdef0123456789abcdef/pages/projects) failed.\u{1b}[0m\n\n  A project with this name already exists. Choose a different project name. [code: 8000002]\n  \n  If you think this is a bug, please open an issue at: \u{1b}[4mhttps://github.com/cloudflare/workers-sdk/issues/new/choose\u{1b}[0m\n\n\n🪵  Logs were written to \"/tmp/.wrangler/logs/wrangler-2026-07-28_18-32-30_718.log\"\n";
@@ -1120,18 +1120,16 @@ fn the_cloudflare_repairs_use_the_documented_invocation() {
     // A project-local wrangler is not on PATH, so a repair reading "Run:
     // wrangler login" tells that user to run a command their shell cannot find
     // — which is the exact failure this whole change exists to remove.
-    use kosong_core::providers::cloudflare::AuthState as CloudflareAuth;
+    use kosong_core::providers::cloudflare::wrangler_repair;
 
-    let signed_out = CloudflareAuth::SignedOut
-        .repair()
+    let signed_out = wrangler_repair(kosong_core::providers::AuthState::SignedOut)
         .expect("being signed out has a repair");
     assert!(
         signed_out.contains("npx wrangler login"),
         "repair: {signed_out}"
     );
 
-    let unknown = CloudflareAuth::Unknown
-        .repair()
+    let unknown = wrangler_repair(kosong_core::providers::AuthState::Unknown)
         .expect("an unknown state has a repair");
     assert!(unknown.contains("npx wrangler whoami"), "repair: {unknown}");
 }
