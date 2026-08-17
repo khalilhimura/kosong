@@ -281,46 +281,36 @@ pub fn rollback_guidance(project: &str) -> String {
 }
 
 /// Reads `wrangler whoami` output to decide whether the user is signed in.
-pub fn interpret_whoami(exit_code: Option<i32>, output: &str) -> AuthState {
+pub fn interpret_whoami(exit_code: Option<i32>, output: &str) -> super::AuthState {
     if exit_code == Some(0) {
         // wrangler exits 0 while reporting that nobody is signed in, so the
         // text has to be consulted rather than trusting the code alone.
         if output.contains("not authenticated") || output.contains("You are not logged in") {
-            return AuthState::SignedOut;
+            return super::AuthState::SignedOut;
         }
-        return AuthState::SignedIn;
+        return super::AuthState::SignedIn;
     }
-    AuthState::Unknown
+    super::AuthState::Unknown
 }
 
-/// Whether `wrangler` is usable.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AuthState {
-    SignedIn,
-    SignedOut,
-    Unknown,
-}
-
-impl AuthState {
-    /// A plain-language next action, in the CLI's voice.
-    pub fn repair(self) -> Option<&'static str> {
-        match self {
-            Self::SignedIn => None,
-            // `npx` rather than a bare `wrangler`, because Cloudflare installs
-            // wrangler per project and a project-local install is not on PATH.
-            // Telling that user to "run: wrangler login" sends them to a command
-            // their shell cannot find — the exact failure this advice exists to
-            // prevent. `npx` reaches a local install and a global one alike.
-            Self::SignedOut => Some(
-                "Wrangler is installed, but it is not signed in to Cloudflare yet.\n\
-                 Run this from your site folder: npx wrangler login\n\
-                 Then come back and run: kosong doctor",
-            ),
-            Self::Unknown => Some(
-                "Wrangler could not tell kosong whether it is signed in.\n\
-                 Run this from your site folder: npx wrangler whoami",
-            ),
-        }
+/// A plain-language next action, in the CLI's voice, for Cloudflare's wrangler.
+pub fn wrangler_repair(state: super::AuthState) -> Option<&'static str> {
+    match state {
+        super::AuthState::SignedIn => None,
+        // `npx` rather than a bare `wrangler`, because Cloudflare installs
+        // wrangler per project and a project-local install is not on PATH.
+        // Telling that user to "run: wrangler login" sends them to a command
+        // their shell cannot find — the exact failure this advice exists to
+        // prevent. `npx` reaches a local install and a global one alike.
+        super::AuthState::SignedOut => Some(
+            "Wrangler is installed, but it is not signed in to Cloudflare yet.\n\
+             Run this from your site folder: npx wrangler login\n\
+             Then come back and run: kosong doctor",
+        ),
+        super::AuthState::Unknown => Some(
+            "Wrangler could not tell kosong whether it is signed in.\n\
+             Run this from your site folder: npx wrangler whoami",
+        ),
     }
 }
 

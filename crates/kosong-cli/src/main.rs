@@ -125,6 +125,8 @@ fn run(cli: &Cli, ui: Ui) -> CliResult<()> {
             }
         }
 
+        Command::Mcp => commands::mcp::run(&context),
+
         Command::Sync { push, pull } => {
             use commands::sync::Direction;
             let direction = match (push, pull) {

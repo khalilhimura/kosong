@@ -132,18 +132,7 @@ impl Config {
     }
 
     pub fn load_from(path: &Utf8Path) -> Result<Self, ConfigError> {
-        match std::fs::read_to_string(path) {
-            Ok(text) => toml::from_str(&text).map_err(|source| ConfigError::Malformed {
-                path: path.to_owned(),
-                source,
-            }),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
-            Err(source) => Err(WorkspaceError::Io {
-                path: path.to_owned(),
-                source,
-            }
-            .into()),
-        }
+        load_toml(path)?.into_config(path.to_owned())
     }
 
     pub fn save(&self) -> Result<(), ConfigError> {
@@ -261,18 +250,7 @@ impl Onboarding {
     }
 
     pub fn load_from(path: &Utf8Path) -> Result<Self, ConfigError> {
-        match std::fs::read_to_string(path) {
-            Ok(text) => toml::from_str(&text).map_err(|source| ConfigError::Malformed {
-                path: path.to_owned(),
-                source,
-            }),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
-            Err(source) => Err(WorkspaceError::Io {
-                path: path.to_owned(),
-                source,
-            }
-            .into()),
-        }
+        load_toml(path)?.into_config(path.to_owned())
     }
 
     pub fn save(&self) -> Result<(), ConfigError> {
@@ -303,5 +281,45 @@ impl Onboarding {
         } else {
             NextStep::Done
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Shared TOML load/save helpers
+// ---------------------------------------------------------------------------
+
+/// Outcome of loading a TOML file: parsed, absent, or an I/O error.
+///
+/// Distinguishing "not found" from a read failure is the one thing both
+/// [`Config`] and [`Onboarding`] need here, and the only thing that keeps their
+/// load methods from being a one-liner each.
+enum LoadOutcome<T> {
+    Parsed(T),
+    NotFound,
+    Io(std::io::Error),
+}
+
+impl<T: serde::de::DeserializeOwned + Default> LoadOutcome<T> {
+    fn into_config(self, path: Utf8PathBuf) -> Result<T, ConfigError> {
+        match self {
+            Self::Parsed(value) => Ok(value),
+            Self::NotFound => Ok(T::default()),
+            Self::Io(source) => Err(WorkspaceError::Io { path, source }.into()),
+        }
+    }
+}
+
+/// Reads and deserialises a TOML file, treating a missing file as default.
+fn load_toml<T: serde::de::DeserializeOwned>(path: &Utf8Path) -> Result<LoadOutcome<T>, ConfigError>
+{
+    match std::fs::read_to_string(path) {
+        Ok(text) => toml::from_str(&text)
+            .map(LoadOutcome::Parsed)
+            .map_err(|source| ConfigError::Malformed {
+                path: path.to_owned(),
+                source,
+            }),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(LoadOutcome::NotFound),
+        Err(source) => Ok(LoadOutcome::Io(source)),
     }
 }

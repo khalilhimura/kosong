@@ -102,6 +102,79 @@ fn session_state() -> SessionJson {
     }
 }
 
+/// Returns the `status --json` output as a JSON string, or an error.
+/// Does not print anything.
+pub fn status_json(context: &Context) -> CliResult<String> {
+    let workspace = context.workspace().ok();
+    let onboarding = context.onboarding()?;
+
+    let (document_json, _parsed) = match &workspace {
+        Some(workspace) if workspace.has_document() => {
+            let path = workspace.document_path().to_string();
+            match workspace.read_document() {
+                Ok(document) => (describe(&document, path)?, Some(document)),
+                Err(error) => (
+                    DocumentJson {
+                        exists: true,
+                        valid: false,
+                        managed: false,
+                        path: Some(path),
+                        error: Some(error.to_string()),
+                        r#type: None,
+                        title: None,
+                        slug: None,
+                        visibility: None,
+                        id: None,
+                        timestamp: None,
+                        resource: None,
+                    },
+                    None,
+                ),
+            }
+        }
+        _ => (
+            DocumentJson {
+                exists: false,
+                valid: false,
+                managed: false,
+                path: workspace.as_ref().map(|w| w.document_path().to_string()),
+                error: None,
+                r#type: None,
+                title: None,
+                slug: None,
+                visibility: None,
+                id: None,
+                timestamp: None,
+                resource: None,
+            },
+            None,
+        ),
+    };
+
+    let report = StatusJson {
+        schema: SCHEMA,
+        okf_version: okf::OKF_VERSION,
+        workspace: WorkspaceJson {
+            found: workspace.is_some(),
+            path: workspace.as_ref().map(|w| w.root().to_string()),
+        },
+        document: document_json,
+        onboarding: OnboardingJson {
+            local_document_created: onboarding.local_document_created,
+            preview_completed: onboarding.preview_completed,
+            login_completed: onboarding.login_completed,
+            site_initialized: onboarding.site_initialized,
+            site_published: onboarding.site_published,
+            next_command: onboarding.next_step().command().to_owned(),
+        },
+        session: session_state(),
+    };
+
+    serde_json::to_string_pretty(&report).map_err(|e| {
+        CliError::internal("JSON_FAILED", format!("could not build JSON output: {e}"))
+    })
+}
+
 pub fn run(context: &Context, json: bool) -> CliResult<()> {
     let ui = context.ui;
 
@@ -173,9 +246,7 @@ pub fn run(context: &Context, json: bool) -> CliResult<()> {
     };
 
     if json {
-        let text = serde_json::to_string_pretty(&report).map_err(|e| {
-            CliError::internal("JSON_FAILED", format!("could not build JSON output: {e}"))
-        })?;
+        let text = status_json(context)?;
         ui.always(text);
     } else {
         print_human(context, &report, parsed.as_ref());
