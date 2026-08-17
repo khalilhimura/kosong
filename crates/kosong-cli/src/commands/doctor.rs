@@ -90,6 +90,30 @@ struct Report {
     checks: Vec<Check>,
 }
 
+/// Returns the `doctor --json` output as a JSON string, or an error.
+/// Does not print anything.
+pub fn doctor_json(context: &Context) -> CliResult<String> {
+    let mut checks = Vec::new();
+    checks.push(check_config_dir());
+    checks.push(check_editor(context));
+    checks.extend(check_document(context));
+    let site_root = site_root(context);
+    checks.extend(check_tools(site_root.as_deref()));
+    checks.extend(check_provider_auth(context, site_root.as_deref()));
+
+    let healthy = checks.iter().all(|c| c.status != Health::Fail);
+    let report = Report {
+        schema: SCHEMA,
+        okf_version: kosong_core::okf::OKF_VERSION,
+        healthy,
+        checks,
+    };
+
+    serde_json::to_string_pretty(&report).map_err(|e| {
+        CliError::internal("JSON_FAILED", format!("could not build JSON output: {e}"))
+    })
+}
+
 pub fn run(context: &Context, json: bool) -> CliResult<()> {
     let ui = context.ui;
 
@@ -110,9 +134,7 @@ pub fn run(context: &Context, json: bool) -> CliResult<()> {
     };
 
     if json {
-        let text = serde_json::to_string_pretty(&report).map_err(|e| {
-            CliError::internal("JSON_FAILED", format!("could not build JSON output: {e}"))
-        })?;
+        let text = doctor_json(context)?;
         ui.always(text);
     } else {
         print_human(context, &report);
@@ -352,7 +374,7 @@ fn check_provider_auth(context: &Context, site_root: Option<&camino::Utf8Path>) 
             Ok(result) => {
                 let state =
                     github::interpret_auth_status(result.exit_code, &result.combined_output());
-                match state.repair() {
+                match github::gh_repair(state) {
                     None => Check::ok("github sign-in", "signed in"),
                     Some(repair) => Check::warn("github sign-in", "not signed in", repair),
                 }
@@ -369,7 +391,7 @@ fn check_provider_auth(context: &Context, site_root: Option<&camino::Utf8Path>) 
             Ok(result) => {
                 let state =
                     cloudflare::interpret_whoami(result.exit_code, &result.combined_output());
-                match state.repair() {
+                match cloudflare::wrangler_repair(state) {
                     None => Check::ok("cloudflare sign-in", "signed in"),
                     Some(repair) => Check::warn("cloudflare sign-in", "not signed in", repair),
                 }

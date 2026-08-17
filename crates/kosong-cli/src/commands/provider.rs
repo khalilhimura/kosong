@@ -57,7 +57,7 @@ pub fn run_gh(context: &Context, subcommand: GhSubcommand, name: Option<String>)
 
     if subcommand == GhSubcommand::Auth {
         let state = github::interpret_auth_status(result.exit_code, &result.combined_output());
-        report_auth(ui, "GitHub CLI", state.repair());
+        report_auth(ui, "GitHub CLI", github::gh_repair(state));
         return Ok(());
     }
 
@@ -86,7 +86,7 @@ pub fn run_cf(context: &Context, subcommand: CfSubcommand) -> CliResult<()> {
 
     if subcommand == CfSubcommand::Whoami {
         let state = cloudflare::interpret_whoami(result.exit_code, &result.combined_output());
-        report_auth(ui, "Wrangler", state.repair());
+        report_auth(ui, "Wrangler", cloudflare::wrangler_repair(state));
         return Ok(());
     }
 
