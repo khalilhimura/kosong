@@ -11,6 +11,7 @@ pub mod show;
 pub mod site;
 pub mod start;
 pub mod status;
+pub mod mcp;
 pub mod sync;
 
 use crate::exit::{CliError, CliResult};

@@ -133,6 +133,9 @@ pub enum Command {
     #[command(subcommand)]
     Site(SiteCommand),
 
+    /// Serve as a Model Context Protocol server over stdio.
+    Mcp,
+
     /// Keep a private copy of your page on the server.
     Sync {
         /// Send your page to the server.

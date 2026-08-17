@@ -18,6 +18,8 @@ camino = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
+rmcp = { version = "0.3", features = ["server", "macros", "transport-io"] }
+schemars = "1"
 
 [target.'cfg(unix)'.dependencies]
 # Only to restore default SIGPIPE handling; see main.rs.
