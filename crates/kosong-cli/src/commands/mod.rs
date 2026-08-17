@@ -18,12 +18,20 @@ use crate::exit::{CliError, CliResult};
 use crate::ui::Ui;
 use camino::Utf8PathBuf;
 use kosong_core::{Config, Onboarding, Workspace};
+use std::sync::Arc;
 
 /// Everything a command needs that is not one of its own flags.
+#[derive(Clone)]
 pub struct Context {
     pub ui: Ui,
     /// Folder to work in: `--workspace` if given, otherwise the current folder.
     pub here: Utf8PathBuf,
+    /// Shared single-threaded runtime, lazily initialised on first use.
+    ///
+    /// Many commands (`site`, `provider`, `doctor`) need to drive async provider
+    /// calls from a synchronous context. Creating a fresh runtime per call is
+    /// wasteful; the Context holds one for reuse within a single command run.
+    runtime: Arc<tokio::runtime::Runtime>,
 }
 
 impl Context {
@@ -46,7 +54,19 @@ impl Context {
                 })?
             }
         };
-        Ok(Self { ui, here })
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| {
+                CliError::internal("RUNTIME_FAILED", format!("could not start async runtime: {e}"))
+            })?;
+
+        Ok(Self {
+            ui,
+            here,
+            runtime: Arc::new(runtime),
+        })
     }
 
     /// Finds an existing workspace, walking up from [`here`](Self::here).
@@ -109,5 +129,13 @@ impl Context {
             self.ui
                 .warn(format!("could not remember your progress: {e}"));
         }
+    }
+
+    /// Runs a future on the shared runtime.
+    ///
+    /// All async provider calls in the CLI should go through this method rather
+    /// than creating their own [`tokio::runtime::Runtime`].
+    pub fn block_on<F: std::future::Future>(&self, future: F) -> F::Output {
+        self.runtime.block_on(future)
     }
 }

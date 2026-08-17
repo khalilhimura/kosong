@@ -6,7 +6,27 @@
 
 use super::Context;
 use crate::exit::CliResult;
+use crate::exit::CliError;
 use kosong_core::workspace::read_checked;
+
+/// Returns the raw document text without printing it.
+///
+/// Reads the workspace document byte-for-byte from disk and trims trailing
+/// whitespace, just like `show --raw`, but returns the string instead of
+/// printing it.
+pub fn show_raw(context: &Context) -> CliResult<String> {
+    let workspace = context.workspace()?;
+    let path = workspace.document_path();
+    read_checked(path)
+        .map(|s| s.trim_end().to_owned())
+        .map_err(|e| {
+            CliError::internal(
+                "SHOW_RAW_FAILED",
+                format!("could not read document: {e}"),
+            )
+            .with_repair(e.repair())
+        })
+}
 
 pub fn run(context: &Context, raw: bool) -> CliResult<()> {
     let ui = context.ui;
